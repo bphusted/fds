@@ -3,7 +3,8 @@ platform=intel64
 dir=`pwd`
 target=${dir##*/}
 
-source $IFORT_COMPILER/bin/compilervars.sh $platform
+#source $IFORT_COMPILER/bin/compilervars.sh $platform
+module load iimpi/2017a
 source ../Scripts/set_mpidist.sh ib $MPIDIST_IB
 if [ "$MPIDIST" == "" ]; then
 # if MPIDIST was not defined above, abort
