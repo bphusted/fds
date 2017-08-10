@@ -45,7 +45,7 @@ END SUBROUTINE COMPUTE_VELOCITY_FLUX
 SUBROUTINE COMPUTE_VISCOSITY(T,NM)
 
 USE PHYSICAL_FUNCTIONS, ONLY: GET_VISCOSITY,LES_FILTER_WIDTH_FUNCTION,GET_POTENTIAL_TEMPERATURE
-USE TURBULENCE, ONLY: VARDEN_DYNSMAG,TEST_FILTER,FILL_EDGES,WALL_MODEL,RNG_EDDY_VISCOSITY
+USE TURBULENCE, ONLY: VARDEN_DYNSMAG,TEST_FILTER,FILL_EDGES,WALL_MODEL,RNG_EDDY_VISCOSITY,WALE_VISCOSITY
 USE MATH_FUNCTIONS, ONLY:EVALUATE_RAMP
 REAL(EB), INTENT(IN) :: T
 INTEGER, INTENT(IN) :: NM
@@ -296,6 +296,34 @@ SELECT_TURB: SELECT CASE (TURB_MODEL)
          ENDDO
       ENDDO
 
+   CASE (WALE) SELECT_TURB
+
+      DO K=1,KBAR
+         DO J=1,JBAR
+            DO I=1,IBAR
+               IF (SOLID(CELL_INDEX(I,J,K))) CYCLE
+               DELTA = LES_FILTER_WIDTH_FUNCTION(DX(I),DY(J),DZ(K))
+               ! compute velocity gradient tensor
+               DUDX = RDX(I)*(UU(I,J,K)-UU(I-1,J,K))
+               DVDY = RDY(J)*(VV(I,J,K)-VV(I,J-1,K))
+               DWDZ = RDZ(K)*(WW(I,J,K)-WW(I,J,K-1))
+               DUDY = 0.25_EB*RDY(J)*(UU(I,J+1,K)-UU(I,J-1,K)+UU(I-1,J+1,K)-UU(I-1,J-1,K))
+               DUDZ = 0.25_EB*RDZ(K)*(UU(I,J,K+1)-UU(I,J,K-1)+UU(I-1,J,K+1)-UU(I-1,J,K-1))
+               DVDX = 0.25_EB*RDX(I)*(VV(I+1,J,K)-VV(I-1,J,K)+VV(I+1,J-1,K)-VV(I-1,J-1,K))
+               DVDZ = 0.25_EB*RDZ(K)*(VV(I,J,K+1)-VV(I,J,K-1)+VV(I,J-1,K+1)-VV(I,J-1,K-1))
+               DWDX = 0.25_EB*RDX(I)*(WW(I+1,J,K)-WW(I-1,J,K)+WW(I+1,J,K-1)-WW(I-1,J,K-1))
+               DWDY = 0.25_EB*RDY(J)*(WW(I,J+1,K)-WW(I,J-1,K)+WW(I,J+1,K-1)-WW(I,J-1,K-1))
+               A_IJ(1,1)=DUDX; A_IJ(1,2)=DUDY; A_IJ(1,3)=DUDZ
+               A_IJ(2,1)=DVDX; A_IJ(2,2)=DVDY; A_IJ(2,3)=DVDZ
+               A_IJ(3,1)=DWDX; A_IJ(3,2)=DWDY; A_IJ(3,3)=DWDZ
+
+               CALL WALE_VISCOSITY(NU_EDDY,A_IJ,DELTA)
+
+               MU(I,J,K) = MU_DNS(I,J,K) + RHOP(I,J,K)*NU_EDDY
+            ENDDO
+         ENDDO
+      ENDDO
+
 END SELECT SELECT_TURB
 
 ! Compute resolved kinetic energy per unit mass
@@ -351,12 +379,30 @@ WALL_LOOP: DO IW=1,N_EXTERNAL_WALL_CELLS+N_INTERNAL_WALL_CELLS
          END SELECT
 
          CALL WALL_MODEL(SLIP_COEF,WC%U_TAU,WC%Y_PLUS,VEL_GAS-VEL_T,&
-                         MU_DNS(IIG,JJG,KKG)/RHO(IIG,JJG,KKG),1._EB/WC%RDN,SURFACE(WC%SURF_INDEX)%ROUGHNESS)
+                         MU_DNS(IIG,JJG,KKG)/RHO(IIG,JJG,KKG),1._EB/WC%ONE_D%RDN,SURFACE(WC%SURF_INDEX)%ROUGHNESS)
 
          IF (LES) THEN
             DELTA = LES_FILTER_WIDTH_FUNCTION(DX(IIG),DY(JJG),DZ(KKG))
-            VDF = 1._EB-EXP(-WC%Y_PLUS*RAPLUS)
-            NU_EDDY = (VDF*C_SMAGORINSKY*DELTA)**2*STRAIN_RATE(IIG,JJG,KKG)
+            SELECT CASE(NEAR_WALL_TURB_MODEL)
+               CASE DEFAULT ! Constant Smagorinsky with Van Driest damping
+                  VDF = 1._EB-EXP(-WC%Y_PLUS*RAPLUS)
+                  NU_EDDY = (VDF*C_SMAGORINSKY*DELTA)**2*STRAIN_RATE(IIG,JJG,KKG)
+               CASE(WALE)
+                  ! compute velocity gradient tensor
+                  DUDX = RDX(IIG)*(UU(IIG,JJG,KKG)-UU(IIG-1,JJG,KKG))
+                  DVDY = RDY(JJG)*(VV(IIG,JJG,KKG)-VV(IIG,JJG-1,KKG))
+                  DWDZ = RDZ(KKG)*(WW(IIG,JJG,KKG)-WW(IIG,JJG,KKG-1))
+                  DUDY = 0.25_EB*RDY(JJG)*(UU(IIG,JJG+1,KKG)-UU(IIG,JJG-1,KKG)+UU(IIG-1,JJG+1,KKG)-UU(IIG-1,JJG-1,KKG))
+                  DUDZ = 0.25_EB*RDZ(KKG)*(UU(IIG,JJG,KKG+1)-UU(IIG,JJG,KKG-1)+UU(IIG-1,JJG,KKG+1)-UU(IIG-1,JJG,KKG-1))
+                  DVDX = 0.25_EB*RDX(IIG)*(VV(IIG+1,JJG,KKG)-VV(IIG-1,JJG,KKG)+VV(IIG+1,JJG-1,KKG)-VV(IIG-1,JJG-1,KKG))
+                  DVDZ = 0.25_EB*RDZ(KKG)*(VV(IIG,JJG,KKG+1)-VV(IIG,JJG,KKG-1)+VV(IIG,JJG-1,KKG+1)-VV(IIG,JJG-1,KKG-1))
+                  DWDX = 0.25_EB*RDX(IIG)*(WW(IIG+1,JJG,KKG)-WW(IIG-1,JJG,KKG)+WW(IIG+1,JJG,KKG-1)-WW(IIG-1,JJG,KKG-1))
+                  DWDY = 0.25_EB*RDY(JJG)*(WW(IIG,JJG+1,KKG)-WW(IIG,JJG-1,KKG)+WW(IIG,JJG+1,KKG-1)-WW(IIG,JJG-1,KKG-1))
+                  A_IJ(1,1)=DUDX; A_IJ(1,2)=DUDY; A_IJ(1,3)=DUDZ
+                  A_IJ(2,1)=DVDX; A_IJ(2,2)=DVDY; A_IJ(2,3)=DVDZ
+                  A_IJ(3,1)=DWDX; A_IJ(3,2)=DWDY; A_IJ(3,3)=DWDZ
+                  CALL WALE_VISCOSITY(NU_EDDY,A_IJ,DELTA)
+            END SELECT
             IF (CELL_COUNTER(IIG,JJG,KKG)==0) MU(IIG,JJG,KKG) = 0._EB
             CELL_COUNTER(IIG,JJG,KKG) = CELL_COUNTER(IIG,JJG,KKG) + 1
             WGT = 1._EB/REAL(CELL_COUNTER(IIG,JJG,KKG),EB)
@@ -548,6 +594,7 @@ SUBROUTINE VELOCITY_FLUX(T,DT,NM)
 ! Compute convective and diffusive terms of the momentum equations
 
 USE MATH_FUNCTIONS, ONLY: EVALUATE_RAMP
+USE COMPLEX_GEOMETRY, ONLY: CCIBM_VELOCITY_FLUX
 INTEGER, INTENT(IN) :: NM
 REAL(EB), INTENT(IN) :: T,DT
 REAL(EB) :: MUX,MUY,MUZ,UP,UM,VP,VM,WP,WM,VTRM,OMXP,OMXM,OMYP,OMYM,OMZP,OMZM,TXYP,TXYM,TXZP,TXZM,TYZP,TYZM, &
@@ -831,7 +878,7 @@ IF (ANY(ABS(FVEC)>TWO_EPSILON_EB)) CALL DIRECT_FORCE               ! Direct forc
 IF (ANY(ABS(OVEC)>TWO_EPSILON_EB)) CALL CORIOLIS_FORCE             ! Coriolis force
 IF (WFDS_BNDRYFUEL)                CALL VEGETATION_DRAG            ! Surface vegetation drag
 IF (PATCH_VELOCITY)                CALL PATCH_VELOCITY_FLUX(DT,NM) ! Specified patch velocity
-IF (N_FACE>0)                      CALL IBM_VELOCITY_FLUX(DT,NM)   ! Direct-forcing Immersed Boundary Method (DEPRECATED)
+IF (CC_IBM)                        CALL CCIBM_VELOCITY_FLUX(DT,NM) ! Direct-forcing Immersed Boundary Method
 IF (PERIODIC_TEST==7)              CALL MMS_VELOCITY_FLUX(NM,T)    ! Source term in manufactured solution
 
 CONTAINS
@@ -1438,7 +1485,7 @@ USE MATH_FUNCTIONS, ONLY: EVALUATE_RAMP
 INTEGER, INTENT(IN) :: NM
 REAL(EB), INTENT(IN) :: DT
 REAL(EB), POINTER, DIMENSION(:,:,:) :: HP=>NULL(),OM_HP=>NULL()
-REAL(EB) :: RFODT,H_OTHER,DUUDT,DVVDT,DWWDT,UN,TNOW
+REAL(EB) :: RFODT,H_OTHER,DUUDT,DVVDT,DWWDT,UN,TNOW,DHFCT
 INTEGER  :: IC2,IC1,N,I,J,K,IW,II,JJ,KK,IOR,N_INT_CELLS,IIO,JJO,KKO,NOM
 TYPE (OBSTRUCTION_TYPE), POINTER :: OB=>NULL()
 TYPE (WALL_TYPE), POINTER :: WC=>NULL()
@@ -1564,6 +1611,8 @@ WALL_LOOP: DO IW=1,N_EXTERNAL_WALL_CELLS+N_INTERNAL_WALL_CELLS
    IOR = WC%ONE_D%IOR
 
    IF (NOM/=0 .OR. WC%BOUNDARY_TYPE==SOLID_BOUNDARY .OR. WC%BOUNDARY_TYPE==NULL_BOUNDARY) THEN
+      DHFCT=1._EB
+      IF (.NOT. PRES_ON_WHOLE_DOMAIN) DHFCT=0._EB
       IF (PREDICTOR) THEN
          UN = -SIGN(1._EB,REAL(IOR,EB))*WC%ONE_D%UWS
       ELSE
@@ -1576,42 +1625,42 @@ WALL_LOOP: DO IW=1,N_EXTERNAL_WALL_CELLS+N_INTERNAL_WALL_CELLS
             ELSE
                DUUDT = 2._EB*RFODT*(UN-0.5_EB*(U(II,JJ,KK)+US(II,JJ,KK)) )
             ENDIF
-            FVX(II,JJ,KK) = -RDXN(II)*(HP(II+1,JJ,KK)-HP(II,JJ,KK)) - DUUDT
+            FVX(II,JJ,KK) = -RDXN(II)*(HP(II+1,JJ,KK)-HP(II,JJ,KK))*DHFCT - DUUDT
          CASE(-1)
             IF (PREDICTOR) THEN
                DUUDT = RFODT*(UN-U(II-1,JJ,KK))
             ELSE
                DUUDT = 2._EB*RFODT*(UN-0.5_EB*(U(II-1,JJ,KK)+US(II-1,JJ,KK)) )
             ENDIF
-            FVX(II-1,JJ,KK) = -RDXN(II-1)*(HP(II,JJ,KK)-HP(II-1,JJ,KK)) - DUUDT
+            FVX(II-1,JJ,KK) = -RDXN(II-1)*(HP(II,JJ,KK)-HP(II-1,JJ,KK))*DHFCT - DUUDT
          CASE( 2)
             IF (PREDICTOR) THEN
                DVVDT = RFODT*(UN-V(II,JJ,KK))
             ELSE
                DVVDT = 2._EB*RFODT*(UN-0.5_EB*(V(II,JJ,KK)+VS(II,JJ,KK)) )
             ENDIF
-            FVY(II,JJ,KK) = -RDYN(JJ)*(HP(II,JJ+1,KK)-HP(II,JJ,KK)) - DVVDT
+            FVY(II,JJ,KK) = -RDYN(JJ)*(HP(II,JJ+1,KK)-HP(II,JJ,KK))*DHFCT - DVVDT
          CASE(-2)
             IF (PREDICTOR) THEN
                DVVDT = RFODT*(UN-V(II,JJ-1,KK))
             ELSE
                DVVDT = 2._EB*RFODT*(UN-0.5_EB*(V(II,JJ-1,KK)+VS(II,JJ-1,KK)) )
             ENDIF
-            FVY(II,JJ-1,KK) = -RDYN(JJ-1)*(HP(II,JJ,KK)-HP(II,JJ-1,KK)) - DVVDT
+            FVY(II,JJ-1,KK) = -RDYN(JJ-1)*(HP(II,JJ,KK)-HP(II,JJ-1,KK))*DHFCT - DVVDT
          CASE( 3)
             IF (PREDICTOR) THEN
                DWWDT = RFODT*(UN-W(II,JJ,KK))
             ELSE
                DWWDT = 2._EB*RFODT*(UN-0.5_EB*(W(II,JJ,KK)+WS(II,JJ,KK)) )
             ENDIF
-            FVZ(II,JJ,KK) = -RDZN(KK)*(HP(II,JJ,KK+1)-HP(II,JJ,KK)) - DWWDT
+            FVZ(II,JJ,KK) = -RDZN(KK)*(HP(II,JJ,KK+1)-HP(II,JJ,KK))*DHFCT - DWWDT
          CASE(-3)
             IF (PREDICTOR) THEN
                DWWDT = RFODT*(UN-W(II,JJ,KK-1))
             ELSE
                DWWDT = 2._EB*RFODT*(UN-0.5_EB*(W(II,JJ,KK-1)+WS(II,JJ,KK-1)) )
             ENDIF
-            FVZ(II,JJ,KK-1) = -RDZN(KK-1)*(HP(II,JJ,KK)-HP(II,JJ,KK-1)) - DWWDT
+            FVZ(II,JJ,KK-1) = -RDZN(KK-1)*(HP(II,JJ,KK)-HP(II,JJ,KK-1))*DHFCT - DWWDT
       END SELECT
    ENDIF
 
@@ -1642,6 +1691,7 @@ SUBROUTINE VELOCITY_PREDICTOR(T,DT,DT_NEW,NM)
 
 USE TURBULENCE, ONLY: COMPRESSION_WAVE
 USE MANUFACTURED_SOLUTIONS, ONLY: UF_MMS,WF_MMS,VD2D_MMS_U,VD2D_MMS_V
+USE COMPLEX_GEOMETRY, ONLY : CCIBM_VELOCITY_NO_GRADH
 
 ! Estimates the velocity components at the next time step
 
@@ -1691,6 +1741,9 @@ DO K=0,KBAR
    ENDDO
 ENDDO
 
+IF (PRES_METHOD == 'GLMAT') CALL WALL_VELOCITY_NO_GRADH(DT,.FALSE.)
+IF (CC_IBM)                 CALL CCIBM_VELOCITY_NO_GRADH(DT)
+
 ENDIF FREEZE_VELOCITY_IF
 
 ! Manufactured solution (debug)
@@ -1734,6 +1787,7 @@ SUBROUTINE VELOCITY_CORRECTOR(T,DT,NM)
 
 USE TURBULENCE, ONLY: COMPRESSION_WAVE
 USE MANUFACTURED_SOLUTIONS, ONLY: UF_MMS,WF_MMS,VD2D_MMS_U,VD2D_MMS_V
+USE COMPLEX_GEOMETRY, ONLY : CCIBM_VELOCITY_NO_GRADH
 
 ! Correct the velocity components
 
@@ -1756,6 +1810,8 @@ FREEZE_VELOCITY_IF: IF (FREEZE_VELOCITY) THEN
    V = VS
    W = WS
 ELSE FREEZE_VELOCITY_IF
+
+IF (PRES_METHOD == 'GLMAT') CALL WALL_VELOCITY_NO_GRADH(DT,.TRUE.) ! Store U velocities on OBST surfaces.
 
 DO K=1,KBAR
    DO J=1,JBAR
@@ -1780,6 +1836,9 @@ DO K=0,KBAR
       ENDDO
    ENDDO
 ENDDO
+
+IF (PRES_METHOD == 'GLMAT') CALL WALL_VELOCITY_NO_GRADH(DT,.FALSE.)
+IF (CC_IBM)                 CALL CCIBM_VELOCITY_NO_GRADH(DT)
 
 ENDIF FREEZE_VELOCITY_IF
 
@@ -2988,7 +3047,7 @@ HEAT_TRANSFER_IF: IF (CHECK_HT) THEN
       KKG = WC%ONE_D%KKG
       ZZ_GET(1:N_TRACKED_SPECIES) = ZZS(IIG,JJG,KKG,1:N_TRACKED_SPECIES)
       CALL GET_SPECIFIC_HEAT(ZZ_GET,CP,TMP(IIG,JJG,KKG))
-      UVW = WC%ONE_D%HEAT_TRANS_COEF/(WC%RHO_F*CP) * WC%RDN
+      UVW = WC%ONE_D%HEAT_TRANS_COEF/(WC%ONE_D%RHO_F*CP) * WC%ONE_D%RDN
       IF (UVW>=UVWMAX) THEN
          UVWMAX = UVW
          ICFL=IIG
@@ -3215,135 +3274,7 @@ T_USED(4) = T_USED(4) + SECOND() - TNOW
 END SUBROUTINE BAROCLINIC_CORRECTION
 
 
-!===========================================================================
-! The following are experimental routines for implementation of a second-
-! order immersed boundary method (IBM). ~RJM
-!===========================================================================
-
-SUBROUTINE IBM_VELOCITY_FLUX(DT,NM)
-
-USE COMPLEX_GEOMETRY, ONLY: GET_VELO_IBM
-
-INTEGER, INTENT(IN) :: NM
-REAL(EB), INTENT(IN) :: DT
-REAL(EB), POINTER, DIMENSION(:,:,:) :: UU,VV,WW,DP,RHOP,HP,UBAR,VBAR,WBAR
-REAL(EB) :: U_IBM,V_IBM,W_IBM,DXC(3),XV(3),U_VEC(3),DUUDT,DVVDT,DWWDT
-
-INTEGER :: I,J,K,IJK(3),IP1,IM1,JP1,JM1,KP1,KM1,TRI_INDEX,IERR,IC
-TYPE(CUTCELL_LINKED_LIST_TYPE), POINTER :: CL=>NULL()
-TYPE(FACET_TYPE), POINTER :: FC=>NULL()
-
-! References:
-!
-! E.A. Fadlun, R. Verzicco, P. Orlandi, and J. Mohd-Yusof. Combined Immersed-
-! Boundary Finite-Difference Methods for Three-Dimensional Complex Flow
-! Simulations. J. Comp. Phys. 161:35-60, 2000.
-!
-! R. McDermott. A Direct-Forcing Immersed Boundary Method with Dynamic Velocity
-! Interpolation. APS/DFD Annual Meeting, Long Beach, CA, Nov. 2010.
-
-IF (PREDICTOR) THEN
-   UU => U
-   VV => V
-   WW => W
-   DP => D
-   RHOP => RHOS
-   HP => H
-ELSE
-   UU => US
-   VV => VS
-   WW => WS
-   DP => DS
-   RHOP => RHO
-   HP => HS
-ENDIF
-
-! store cell centered velocity
-
-UBAR => WORK2
-VBAR => WORK3
-WBAR => WORK4
-UBAR = 0._EB
-VBAR = 0._EB
-WBAR = 0._EB
-DO K=0,KBAR
-   DO J=0,JBAR
-      DO I=0,IBAR
-         IP1 = MIN(I+1,IBP1)
-         JP1 = MIN(J+1,JBP1)
-         KP1 = MIN(K+1,KBP1)
-         IM1 = MAX(I-1,0)
-         JM1 = MAX(J-1,0)
-         KM1 = MAX(K-1,0)
-         UBAR(I,J,K) = 0.5_EB*(UU(I,J,K)+UU(IM1,J,K))
-         VBAR(I,J,K) = 0.5_EB*(VV(I,J,K)+VV(I,JM1,K))
-         WBAR(I,J,K) = 0.5_EB*(WW(I,J,K)+WW(I,J,KM1))
-      ENDDO
-   ENDDO
-ENDDO
-
-UNSTRUCTURED_GEOMETRY_LOOP: DO TRI_INDEX=1,N_FACE
-
-   FC=>FACET(TRI_INDEX)
-   CL=>FC%CUTCELL_LIST
-
-   CUTCELL_LOOP: DO
-
-      IF ( .NOT. ASSOCIATED(CL) ) EXIT
-
-      IC = CL%INDEX
-      I = I_CUTCELL(IC)
-      J = J_CUTCELL(IC)
-      K = K_CUTCELL(IC)
-      IJK = (/I,J,K/)
-      IP1 = MIN(I+1,IBP1)
-      JP1 = MIN(J+1,JBP1)
-      KP1 = MIN(K+1,KBP1)
-      IM1 = MAX(I-1,0)
-      JM1 = MAX(J-1,0)
-      KM1 = MAX(K-1,0)
-
-      DXC = (/DXN(I),DY(J),DZ(K)/)
-      XV = (/X(I),YC(J),ZC(K)/)
-
-      U_VEC = (/UU(I,J,K),0.5_EB*(VBAR(I,J,K)+VBAR(IP1,J,K)),0.5_EB*(WBAR(I,J,K)+WBAR(IP1,J,K))/)
-      CALL GET_VELO_IBM(U_IBM,U_VEC,IERR,1,XV,TRI_INDEX,IMMERSED_BOUNDARY_METHOD,DXC,NM)
-      IF (IERR==0) THEN
-         IF (PREDICTOR) DUUDT = (U_IBM-U(I,J,K))/DT
-         IF (CORRECTOR) DUUDT = (2._EB*U_IBM-(U(I,J,K)+US(I,J,K)))/DT
-         FVX(I,J,K) = -RDXN(I)*(HP(I+1,J,K)-HP(I,J,K)) - DUUDT
-      ENDIF
-
-      DXC = (/DX(I),DYN(J),DZ(K)/)
-      XV = (/XC(I),Y(J),ZC(K)/)
-
-      U_VEC  = (/0.5_EB*(UBAR(I,J,K)+UBAR(I,JP1,K)),VV(I,J,K),0.5_EB*(WBAR(I,J,K)+WBAR(I,JP1,K))/)
-      CALL GET_VELO_IBM(V_IBM,U_VEC,IERR,2,XV,TRI_INDEX,IMMERSED_BOUNDARY_METHOD,DXC,NM)
-      IF (IERR==0) THEN
-         IF (PREDICTOR) DVVDT = (V_IBM-V(I,J,K))/DT
-         IF (CORRECTOR) DVVDT = (2._EB*V_IBM-(V(I,J,K)+VS(I,J,K)))/DT
-         FVY(I,J,K) = -RDYN(J)*(HP(I,J+1,K)-HP(I,J,K)) - DVVDT
-      ENDIF
-
-      DXC = (/DX(I),DY(J),DZN(K)/)
-      XV = (/XC(I),YC(J),Z(K)/)
-
-      U_VEC  = (/0.5_EB*(UBAR(I,J,K)+UBAR(I,J,KP1)),0.5_EB*(VBAR(I,J,K)+VBAR(I,J,KP1)),WW(I,J,K)/)
-      CALL GET_VELO_IBM(W_IBM,U_VEC,IERR,3,XV,TRI_INDEX,IMMERSED_BOUNDARY_METHOD,DXC,NM)
-      IF (IERR==0) THEN
-         IF (PREDICTOR) DWWDT = (W_IBM-W(I,J,K))/DT
-         IF (CORRECTOR) DWWDT = (2._EB*W_IBM-(W(I,J,K)+WS(I,J,K)))/DT
-         FVZ(I,J,K) = -RDZN(K)*(HP(I,J,K+1)-HP(I,J,K)) - DWWDT
-      ENDIF
-
-      CL=>CL%NEXT
-
-   ENDDO CUTCELL_LOOP
-
-ENDDO UNSTRUCTURED_GEOMETRY_LOOP
-
-END SUBROUTINE IBM_VELOCITY_FLUX
-
+! ----------------------------- PATCH_VELOCITY_FLUX -----------------------------------
 
 SUBROUTINE PATCH_VELOCITY_FLUX(DT,NM)
 
@@ -3494,5 +3425,147 @@ DEVC_LOOP: DO N=1,N_DEVC
 ENDDO DEVC_LOOP
 
 END SUBROUTINE PATCH_VELOCITY_FLUX
+
+
+! ------------------------ WALL_VELOCITY_NO_GRADH ---------------------------------
+
+SUBROUTINE WALL_VELOCITY_NO_GRADH(DT,STORE_UN)
+
+! This routine recomputes velocities on wall cells, such that the correct
+! normal derivative of H is used on the projection. It is only used when the Poisson equation
+! for the pressure is solved .NOT. PRES_ON_WHOLE_DOMAIN (i.e. using the GLMAT solver).
+
+REAL(EB), INTENT(IN) :: DT
+LOGICAL, INTENT(IN) :: STORE_UN
+
+! Local variables:
+INTEGER :: IIG,JJG,KKG,IOR,IW
+REAL(EB) :: DHDN, VEL_N
+TYPE (WALL_TYPE), POINTER :: WC
+REAL(EB), SAVE, ALLOCATABLE, DIMENSION(:) :: UN_WALLS
+
+
+IF (PRES_ON_WHOLE_DOMAIN) RETURN
+
+STORE_UN_COND : IF ( STORE_UN ) THEN
+
+   ! These velocities from the beginning of step are needed for the velocity fix on wall cells at the corrector
+   ! phase (i.e. the loops in VELOCITY_CORRECTOR will change U,V,W to wrong reults using (HP1-HP)/DX gradients,
+   ! when the pressure solver in the GLMAT solver.
+   IF(ALLOCATED(UN_WALLS)) DEALLOCATE(UN_WALLS)
+   ALLOCATE( UN_WALLS(1:N_EXTERNAL_WALL_CELLS+N_INTERNAL_WALL_CELLS) )
+   UN_WALLS(:) = 0._EB
+
+   STORE_LOOP : DO IW=1,N_EXTERNAL_WALL_CELLS+N_INTERNAL_WALL_CELLS
+
+      WC => WALL(IW)
+      IIG   = WC%ONE_D%IIG
+      JJG   = WC%ONE_D%JJG
+      KKG   = WC%ONE_D%KKG
+      IOR   = WC%ONE_D%IOR
+
+      SELECT CASE(IOR)
+      CASE( IAXIS)
+         UN_WALLS(IW) = U(IIG-1,JJG  ,KKG  )
+      CASE(-IAXIS)
+         UN_WALLS(IW) = U(IIG  ,JJG  ,KKG  )
+      CASE( JAXIS)
+         UN_WALLS(IW) = V(IIG  ,JJG-1,KKG  )
+      CASE(-JAXIS)
+         UN_WALLS(IW) = V(IIG  ,JJG  ,KKG  )
+      CASE( KAXIS)
+         UN_WALLS(IW) = W(IIG  ,JJG  ,KKG-1)
+      CASE(-KAXIS)
+         UN_WALLS(IW) = W(IIG  ,JJG  ,KKG  )
+      END SELECT
+
+   ENDDO STORE_LOOP
+
+   RETURN
+
+ENDIF STORE_UN_COND
+
+! Case of not storing, recompute INTERNAL_WALL_CELL velocities, taking into acct that DHDN=0._EB:
+PREDICTOR_COND : IF (PREDICTOR) THEN
+
+  ! Loop internal wall cells -> on OBST surfaces:
+  WALL_CELL_LOOP_1: DO IW=1,N_EXTERNAL_WALL_CELLS+N_INTERNAL_WALL_CELLS
+
+     WC => WALL(IW)
+
+     IF (WC%BOUNDARY_TYPE/=SOLID_BOUNDARY .AND. WC%BOUNDARY_TYPE/=NULL_BOUNDARY) CYCLE
+
+     IIG   = WC%ONE_D%IIG
+     JJG   = WC%ONE_D%JJG
+     KKG   = WC%ONE_D%KKG
+     IOR   = WC%ONE_D%IOR
+
+     DHDN=0._EB ! Set the normal derivative of H to zero for solids.
+
+     SELECT CASE(IOR)
+     CASE( IAXIS)
+        US(IIG-1,JJG  ,KKG  ) = (U(IIG-1,JJG  ,KKG  ) - DT*( FVX(IIG-1,JJG  ,KKG  ) + DHDN ))
+     CASE(-IAXIS)
+        US(IIG  ,JJG  ,KKG  ) = (U(IIG  ,JJG  ,KKG  ) - DT*( FVX(IIG  ,JJG  ,KKG  ) + DHDN ))
+     CASE( JAXIS)
+        VS(IIG  ,JJG-1,KKG  ) = (V(IIG  ,JJG-1,KKG  ) - DT*( FVY(IIG  ,JJG-1,KKG  ) + DHDN ))
+     CASE(-JAXIS)
+        VS(IIG  ,JJG  ,KKG  ) = (V(IIG  ,JJG  ,KKG  ) - DT*( FVY(IIG  ,JJG  ,KKG  ) + DHDN ))
+     CASE( KAXIS)
+        WS(IIG  ,JJG  ,KKG-1) = (W(IIG  ,JJG  ,KKG-1) - DT*( FVZ(IIG  ,JJG  ,KKG-1) + DHDN ))
+     CASE(-KAXIS)
+        WS(IIG  ,JJG  ,KKG  ) = (W(IIG  ,JJG  ,KKG  ) - DT*( FVZ(IIG  ,JJG  ,KKG  ) + DHDN ))
+     END SELECT
+
+  ENDDO WALL_CELL_LOOP_1
+
+ELSE ! Corrector
+
+  ! Loop internal wall cells -> on OBST surfaces:
+  WALL_CELL_LOOP_2: DO IW=1,N_EXTERNAL_WALL_CELLS+N_INTERNAL_WALL_CELLS
+
+     WC => WALL(IW)
+
+     IF (WC%BOUNDARY_TYPE/=SOLID_BOUNDARY .AND. WC%BOUNDARY_TYPE/=NULL_BOUNDARY) CYCLE
+
+     IIG   = WC%ONE_D%IIG
+     JJG   = WC%ONE_D%JJG
+     KKG   = WC%ONE_D%KKG
+     IOR   = WC%ONE_D%IOR
+
+     DHDN=0._EB ! Set the normal derivative of H to zero for solids.
+
+     VEL_N = UN_WALLS(IW)
+
+     SELECT CASE(IOR)
+     CASE( IAXIS)                                 ! | - Problem with this is it was modified in VELOCITY_CORRECTOR,
+                                                  ! V   => Store the untouched U normal on internal WALLs.
+         U(IIG-1,JJG  ,KKG  ) = 0.5_EB*(                      VEL_N + US(IIG-1,JJG  ,KKG  ) - &
+                                        DT*( FVX(IIG-1,JJG  ,KKG  ) + DHDN ))
+     CASE(-IAXIS)
+         U(IIG  ,JJG  ,KKG  ) = 0.5_EB*(                      VEL_N + US(IIG  ,JJG  ,KKG  ) - &
+                                        DT*( FVX(IIG  ,JJG  ,KKG  ) + DHDN ))
+     CASE( JAXIS)
+         V(IIG  ,JJG-1,KKG  ) = 0.5_EB*(                      VEL_N + VS(IIG  ,JJG-1,KKG  ) - &
+                                        DT*( FVY(IIG  ,JJG-1,KKG  ) + DHDN ))
+     CASE(-JAXIS)
+         V(IIG  ,JJG  ,KKG  ) = 0.5_EB*(                      VEL_N + VS(IIG  ,JJG  ,KKG  ) - &
+                                        DT*( FVY(IIG  ,JJG  ,KKG  ) + DHDN ))
+     CASE( KAXIS)
+         W(IIG  ,JJG  ,KKG-1) = 0.5_EB*(                      VEL_N + WS(IIG  ,JJG  ,KKG-1) - &
+                                        DT*( FVZ(IIG  ,JJG  ,KKG-1) + DHDN ))
+     CASE(-KAXIS)
+         W(IIG  ,JJG  ,KKG  ) = 0.5_EB*(                      VEL_N + WS(IIG  ,JJG  ,KKG  ) - &
+                                        DT*( FVZ(IIG  ,JJG  ,KKG  ) + DHDN ))
+     END SELECT
+
+  ENDDO WALL_CELL_LOOP_2
+
+  DEALLOCATE(UN_WALLS)
+
+ENDIF PREDICTOR_COND
+
+RETURN
+END SUBROUTINE WALL_VELOCITY_NO_GRADH
 
 END MODULE VELO

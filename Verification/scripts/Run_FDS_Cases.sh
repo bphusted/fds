@@ -3,6 +3,13 @@
 # This script runs the FDS Verification Cases on a linux machine with
 # a batch queuing system
 
+if [ ! -e .verification_script_dir ]; then
+   echo "***error The Run_FDS_Cases.sh script must be run"
+   echo "   in the directory Verification/script."
+   echo "   script aborted."
+   exit
+fi
+
 QUEUE=batch
 DEBUG=
 IB=
@@ -17,6 +24,8 @@ BACKGROUND_LOAD=75
 JOBPREFIX=
 REGULAR=1
 BENCHMARK=1
+OOPT=
+POPT=
 
 if [ "$FDSNETWORK" == "infiniband" ] ; then
   IB=ib
@@ -35,6 +44,8 @@ echo "-j - job prefix"
 echo "-m max_iterations - stop FDS runs after a specifed number of iterations (delayed stop)"
 echo "     example: an option of 10 would cause FDS to stop after 10 iterations"
 echo "-o nthreads - run FDS with a specified number of threads [default: $nthreads]"
+echo "-O - pass through -O option to qfds.sh"
+echo "-P - pass through -P option to qfds.sh"
 echo "-q queue_name - run cases using the queue queue_name"
 echo "     default: batch"
 echo "     other options: fire70s, vis"
@@ -55,7 +66,7 @@ cd $SVNROOT
 export SVNROOT=`pwd`
 cd $CURDIR
 
-while getopts 'bB:c:dD:hj:L:m:o:q:r:Rsw:' OPTION
+while getopts 'bB:c:dD:hj:L:m:o:O:P:q:r:Rsw:' OPTION
 do
 case $OPTION in
   b)
@@ -90,6 +101,12 @@ case $OPTION in
   o)
    nthreads="$OPTARG"
    ;;
+  O)
+   OOPT="$OPTARG"
+   ;;
+  P)
+   POPT="$OPTARG"
+   ;;
   q)
    QUEUE="$OPTARG"
    ;;
@@ -112,6 +129,12 @@ if [ "$OS" == "Darwin" ]; then
   PLATFORM=osx$size
 else
   PLATFORM=linux$size
+fi
+if [ "$OOPT" != "" ]; then
+  OOPT="-O $OOPT"
+fi
+if [ "$POPT" != "" ]; then
+  POPT="-O $POPT"
 fi
 
 IB=
@@ -143,7 +166,7 @@ fi
 
 export BASEDIR=`pwd`
 
-export QFDS="$QFDSSH $BACKGROUND $walltime -n $nthreads $JOBPREFIX -e $FDSMPI $QUEUE" 
+export QFDS="$QFDSSH $BACKGROUND $walltime -n $nthreads $JOBPREFIX -e $FDSMPI $QUEUE $OOPT $POPT" 
 
 cd ..
 if [ "$BENCHMARK" == "1" ]; then

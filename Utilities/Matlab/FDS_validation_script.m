@@ -26,6 +26,7 @@
 close all
 clear all
 
+restoredefaultpath
 addpath 'scripts'
 
 % Scripts that run prior to dataplot
@@ -39,6 +40,7 @@ combine_csiro
 fm_datacenter_scatter
 LNG_Dispersion
 LNG_wind_profiles
+FM_Vertical_Wall_Flames
 
 % Dataplot and scatplot options
 
@@ -89,5 +91,6 @@ VTT_Sprays
 fm_datacenter_veltest
 umd_line_burner
 % umd_line_burner_2
+% waterloo_methanol
 
 display('validation scripts completed successfully!')
