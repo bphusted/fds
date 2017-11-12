@@ -8,11 +8,12 @@ then
   echo ""
   echo "  -i FDS.tar.gz - compressed tar file containing FDS distribution"
   echo "  -d installdir - default install directory"
-  echo "   INSTALLER.sh - bash shell script containing self-extracting FDS installer"
+  echo "   INSTALLER.sh - bash shell script containing self-extracting Installer"
   echo
   exit
 fi
 
+FDSVARS=${FDSEDITION}VARS.sh
 INSTALLDIR=
 FDS_TAR=
 INSTALLER=
@@ -64,18 +65,21 @@ if [ "$ostype" == "OSX" ]; then
   BASHRC2=.bash_profile
   PLATFORM=osx
 fi
-OPENMPIFILE=openmpi_${OPENMPI_VERSION}_${PLATFORM}_64.tar.gz
+if [ "$MPI_VERSION" != "INTEL" ]; then
+OPENMPIFILE=openmpi_${MPI_VERSION}_${PLATFORM}_64.tar.gz
+fi
 
 cat << EOF > $INSTALLER
 #!/bin/bash
 
 OVERRIDE=\$1
 echo ""
-echo "Installing 64 bit $ostype2 FDS $FDSVERSION and Smokeview $SMVVERSION"
+echo "Installing FDS $FDSVERSION and Smokeview $SMVVERSION for $ostype2"
 echo ""
 echo "Options:"
 echo "  1) Press <Enter> to begin installation [default]"
-echo "  2) Type \"extract\" to copy the installation files to $FDS_TAR"
+echo "  2) Type \"extract\" to copy the installation files to:"
+echo "     $FDS_TAR"
 
 BAK=_\`date +%Y%m%d_%H%M%S\`
 
@@ -149,16 +153,24 @@ MKDIR()
     echo "\`whoami\` does not have permission to create \$DIR."
     echo "FDS installation aborted."
     exit 0
-  else
-    echo The installation directory, "\$DIR, has been created."
   fi
   touch \$DIR/temp.\$\$>&/dev/null
   if ! [ -e \$DIR/temp.\$\$ ]
   then
-    echo "\`whoami\` does not have permission to write to \$DIR"
+    echo ""
+    echo "***error: \`whoami\` does not have permission to overwrite \$DIR"
+    echo ""
+    ls -ld \$DIR
+    echo ""
+    echo "Either: "
+    echo "  1. change to a user that has permission, "
+    echo "  2. remove \$DIR or,"
+    echo "  3. change the owner/permissions of \$DIR" 
+    echo "     to allow acceess to \`whoami\`"
     echo "FDS installation aborted."
     exit 0
   fi
+  echo The installation directory, "\$DIR, has been created."
   rm \$DIR/temp.\$\$
 }
 
@@ -171,7 +183,8 @@ THISDIR=\`pwd\`
 #--- record temporary startup file names
 
 BASHRCFDS=/tmp/bashrc_fds.\$\$
-FDSMODULE=/tmp/fds_module.\$\$
+FDSMODULEtmp=/tmp/fds_module.\$\$
+STARTUPtmp=/tmp/readme.\$\$
 
 #--- Find the beginning of the included FDS tar file so that it 
 #    can be subsequently un-tar'd
@@ -288,11 +301,17 @@ eval MPIDIST_FDS=\$FDS_root/bin/openmpi_64
 while true; do
    echo ""
    echo "Installation directory: \$FDS_root"
+EOF
+if [ "$OPENMPIFILE" != "" ]; then
+cat << EOF >> $INSTALLER
    echo "     OpenMPI directory: \$mpiused"
+EOF
+fi
+cat << EOF >> $INSTALLER
    if [ "\$OVERRIDE" == "y" ] ; then
      yn="y"
    else
-     read -p "Do you wish to proceed? (yes/no) " yn
+     read -p "Proceed? (yes/no) " yn
    fi
    case \$yn in
       [Yy]* ) break;;
@@ -314,12 +333,19 @@ echo
 echo "Copying FDS installation files to"  \$FDS_root
 cd \$FDS_root
 tail -n +\$SKIP \$THISSCRIPT | tar -xz
+EOF
+
+if [ "$OPENMPIFILE" != "" ]; then
+cat << EOF >> $INSTALLER
 if [ "\$MPIDIST_FDSROOT" != "" ]; then
   echo unpacking OpenMPI distribution to \$MPIDIST_FDSROOT
   cd \$MPIDIST_FDSROOT
   tar xvf $OPENMPIFILE >& /dev/null
 fi
+EOF
+fi
 
+cat << EOF >> $INSTALLER
 
 echo "Copy complete."
 
@@ -327,83 +353,135 @@ echo "Copy complete."
 
 MKDIR \$FDS_root/bin/modules
 
-cat << MODULE > \$FDSMODULE
+cat << MODULE > \$FDSMODULEtmp
 #%Module1.0#####################################################################
 ###
-### fds modulefile
-###
-### modulefiles/fds
+### FDS6 modulefile
 ###
 
 proc ModulesHelp { } {
-        global version
-
         puts stderr "\tAdds FDS bin location to your PATH environment variable"
 }
 
 module-whatis   "Loads fds paths and libraries."
 
-set     version      "1.0"
+conflict FDS6
+conflict openmpi
 
-prepend-path    PATH    \$FDS_root/bin
-prepend-path    LD_LIBRARY_PATH \$FDS_root/bin/INTELLIBS
-prepend-path    LD_LIBRARY_PATH \$FDS_root/bin/openmpi_64
-
-setenv  MPIDIST \$FDS_root/bin/openmpi_64
-setenv  OMP_NUM_THREAD 4
-
-conflict fds
+prepend-path    PATH            \$FDS_root/bin
+prepend-path    LD_LIBRARY_PATH \$FDS_root/bin/LIB64
 MODULE
+if [ "$ostype" == "LINUX" ] ; then
+cat << MODULE >> \$FDSMODULEtmp
+prepend-path    LD_LIBRARY_PATH /usr/lib64
+MODULE
+fi
+if [ "$MPI_VERSION" != "INTEL" ] ; then
+cat << MODULE >> \$FDSMODULEtmp
+prepend-path    PATH            \$FDS_root/bin/openmpi_64/bin
+setenv          OPAL_PREFIX     \$FDS_root/bin/openmpi_64
+MODULE
+fi
 
-cp \$FDSMODULE \$FDS_root/bin/modules/fds
-rm \$FDSMODULE
+cp \$FDSMODULEtmp \$FDS_root/bin/modules/$FDSMODULE
+rm \$FDSMODULEtmp
 
 #--- create BASH startup file
 
 cat << BASH > \$BASHRCFDS
 #/bin/bash
-
-export FDSBINDIR=\$FDS_root/bin
-export MPIDIST=\\\$FDSBINDIR/openmpi_64
+FDSBINDIR=\$FDS_root/bin
+export PATH=\\\$FDSBINDIR:\\\$PATH
 BASH
+
+if [ "$MPI_VERSION" != "INTEL" ] ; then
+cat << BASH >> \$BASHRCFDS
+export PATH=\\\$FDSBINDIR/openmpi_64/bin:\\\$PATH
+export OPAL_PREFIX=\\\$FDSBINDIR/openmpi_64
+BASH
+fi
+
+if [ "$ostype" == "LINUX" ] ; then
+OMP_COMMAND="grep -c processor /proc/cpuinfo"
+else
+OMP_COMMAND="system_profiler SPHardwareDataType"
+fi
 
 if [ "$ostype" == "LINUX" ] ; then
 cat << BASH >> \$BASHRCFDS
-
-export $LDLIBPATH=\\\$FDSBINDIR/LIB64:\\\$FDSBINDIR/INTELLIBS:\\\$$LDLIBPATH
+export $LDLIBPATH=/usr/lib64:\\\$FDSBINDIR/LIB64:\\\$$LDLIBPATH
 BASH
 fi
-cat << BASH >> \$BASHRCFDS
-export PATH=\\\$FDSBINDIR:\\\$MPIDIST/bin:\\\$PATH
 
+cat << BASH >> \$BASHRCFDS
+#  set OMP_NUM_THREADS to max of 4 and "Total Number of Cores" 
+#  obtained from running:
+#  \$OMP_COMMAND
 export OMP_NUM_THREADS=4
 BASH
 
-#--- create startup file for FDS
+#--- create startup and readme files
 
-cp \$BASHRCFDS \$FDS_root/bin/FDSVARS.sh
-chmod +x \$FDS_root/bin/FDSVARS.sh
-rm \$BASHRCFDS
+mv \$BASHRCFDS \$FDS_root/bin/$FDSVARS
+chmod +x \$FDS_root/bin/$FDSVARS
+
+#--- create startup readme file
+
+cat << STARTUP > \$STARTUPtmp
+<h3>Defining Environment Variables Used by FDS</h3>
+Options:
+<ul>
+<li>Add following lines to one of your startup files
+(usually \$HOME/.bashrc).<br>
+<pre>
+STARTUP
+
+cat \$FDS_root/bin/$FDSVARS | grep -v bash >> \$STARTUPtmp
+
+cat << STARTUP >> \$STARTUPtmp
+</pre>
+<li>or add:
+<pre>
+source \$FDS_root/bin/$FDSVARS
+</pre>
+<li>or if you are using modules, add:
+<pre>
+export MODULEPATH=\$FDS_root/bin/modules:\\\$MODULEPATH
+module load $FDSMODULE
+</pre>
+
+<li>Log out and log back in so changes will take effect.
+
+<li>To uninstall fds, erase the directory:<br>
+\$FDS_root 
+<p>and remove changes you made to your startup files.
+
+STARTUP
+
+mv \$STARTUPtmp \$FDS_root/Documentation/README_startup.html
 
 EOF
 
 cat << EOF >> $INSTALLER
 echo ""
 echo "-----------------------------------------------"
-echo "Wrap up"
+echo "*** To complete the installation add the following lines to your startup file"
+echo "   (usually \$HOME/.bashrc)."
 echo ""
-echo "1. Add the following line to one of your startup files"
-echo "   to complete the installation:"
+cat \$FDS_root/bin/$FDSVARS | grep -v bash
 echo ""
-echo "source \$FDS_root/bin/FDSVARS.sh"
+echo "or if you are using modules, add:"
 echo ""
-echo "2. See the readme file at \$FDS_root/bin/README.html for"
-echo "   notes on setting up your environment if you plan to use"
-echo "   a fds git repo."
+echo "export MODULEPATH=\$FDS_root/bin/modules:\\\$MODULEPATH"
+echo "module load $FDSMODULE"
 echo ""
-echo "3. Log out and log back in so changes will take effect."
+echo "*** Log out and log back in so the changes will take effect."
 echo ""
-echo "Installation complete."
+echo "*** To uninstall fds, erase the directory: "
+echo "\$FDS_root"
+echo "and remove any changes made to your startup file."
+echo ""
+echo "*** Installation complete."
 exit 0
 
 

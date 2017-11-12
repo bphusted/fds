@@ -13,12 +13,13 @@ export PLATFORM=OSX64
 export FDSEDITION=$4
 export FDSVERSION=$5
 export SMVVERSION=$6
-export OPENMPI_VERSION=$7
+export MPI_VERSION=$7
 export MAJOR=$8
 export COMPLIBFROM=
 export MISCLIBFROM=
 
 export FDSOS=_osx_64
 export INSTALLDIR=FDS/$FDSEDITION
+export FDSMODULE=$FDSEDITION
 
 $fds_smvroot/fds/Utilities/Scripts/bundle_generic.sh
