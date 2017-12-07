@@ -21,8 +21,11 @@ OMPPROCBIND=
 HELP=
 FDS_MODULE_OPTION=1
 
+queue=batch
 ncores=8
-if [ "`uname`" != "Darwin" ]; then
+if [ "`uname`" == "Darwin" ]; then
+  queue=none
+else
   ncores=`grep processor /proc/cpuinfo | wc -l`
 fi
 if [ "$NCORES_COMPUTENODE" != "" ]; then
@@ -35,7 +38,6 @@ DB=
 JOBPREFIX=
 OUT2ERROR=
 EMAIL=
-queue=batch
 stopjob=0
 MCA=
 if [ "$MPIRUN_MCA" != "" ]; then
@@ -247,10 +249,12 @@ shift $(($OPTIND-1))
 
 # ^^^^^^^^^^^^^^^^^^^^^^^^parse options^^^^^^^^^^^^^^^^^^^^^^^^^
 
-if [ "$RESOURCE_MANAGER" == "SLURM" ]; then
-  walltime=99-99:99:99
-else
-  walltime=999:0:0
+if [ "$walltime" == "" ]; then
+    if [ "$RESOURCE_MANAGER" == "SLURM" ]; then
+	walltime=99-99:99:99
+    else
+	walltime=999:0:0
+    fi
 fi
 if [ "$nodelist" != "" ]; then
   nodelist="-l nodes=$nodelist"
@@ -309,7 +313,7 @@ fi
 
 if [ -e $exe ]; then
   if [ "$use_mpi_intel" == "" ]; then
-    is_intel_mpi=`echo "" | $exe |& grep MPI | grep library | grep Intel | wc -l`
+    is_intel_mpi=`echo "" | $exe 2>&1 >/dev/null | grep MPI | grep library | grep Intel | wc -l`
     if [ "$is_intel_mpi" == "1" ]; then
          use_intel_mpi=1
          nosocket="1"
@@ -365,6 +369,10 @@ let "nodes=($nmpi_processes-1)/$nmpi_processes_per_node+1"
 if test $nodes -lt 1 ; then
   nodes=1
 fi
+if [ "$RESOURCE_MANAGER" == "SLURM" ]; then
+    nodes=""
+fi
+
 
 # define processes per node
 
@@ -428,7 +436,7 @@ else                                 # using OpenMPI
   fi
   MPIRUNEXE=${mpibindir}mpirun
   if [ "$mpibindir" == "" ]; then  # OPENMPI_PATH blank so mpirun needs to be in path
-    notfound=`$MPIRUNEXE -h |& head -1 | grep "not found" | wc -l`
+    notfound=`$MPIRUNEXE -h 2>&1 >/dev/null | head -1 | grep "not found" | wc -l`
     if [ $notfound -eq 1 ]; then
       echo "*** error: $MPIRUNEXE not in PATH"
       ABORTRUN=y
@@ -542,6 +550,7 @@ fi
 
 if [ "$RESOURCE_MANAGER" == "SLURM" ]; then
   QSUB="sbatch -p $queue --ignore-pbs"
+  MPIRUN='srun'
 fi
 
 # Set walltime parameter only if walltime is specified as input argument
@@ -567,10 +576,16 @@ if [ "$queue" != "none" ]; then
 #SBATCH -o $outlog
 #SBATCH -p $queue
 #SBATCH -n $nmpi_processes
-#SBATCH --nodes=$nodes
+####SBATCH --nodes=$nodes
 #SBATCH --cpus-per-task=$nopenmp_threads
 $SLURM_MEM
 EOF
+    if [ "$walltimestring_slurm" != "" ]; then
+      cat << EOF >> $scriptfile
+#SBATCH $walltimestring_slurm
+EOF
+    fi
+
   else
     cat << EOF >> $scriptfile
 #PBS -N $JOBPREFIX$TITLE
