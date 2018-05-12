@@ -39,6 +39,7 @@ PROCESS Arup_Tunnel
 PROCESS ATF_Corridors
 PROCESS Backward_Facing_Step
 PROCESS Beyler_Hood
+PROCESS Bittern_Sprinkler_Experiments
 PROCESS Bouchair_Solar_Chimney
 PROCESS BRE_Spray
 PROCESS Bryant_Doorway
@@ -95,8 +96,10 @@ PROCESS UMD_Line_Burner
 PROCESS UMD_Polymers
 PROCESS USCG_HAI
 PROCESS USN_Hangars
+PROCESS Vegetation
 PROCESS Vettori_Flat_Ceiling
 PROCESS Vettori_Sloped_Ceiling
 PROCESS VTT
 PROCESS VTT_Sprays
+PROCESS Waterloo_Methanol
 PROCESS WTC

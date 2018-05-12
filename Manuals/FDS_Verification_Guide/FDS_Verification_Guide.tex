@@ -1910,15 +1910,15 @@ Propane is injected into a 4~m cube with 1~m$^2$ vents on all six faces.  The ma
 
 \subsubsection{Case 2: Air Injection into a Pressurized Compartment}
 
- Air is injected into one of two cubic chambers separated by a solid partition.  The mass flux of air is 1~kg/(m$^2\cdot$s) through a vent that is 0.04~m$^2$ in area. After 25~s, the mass of air introduced should be 1~kg. The accumulation of air in the chamber is shown in Fig.~\ref{species_conservation}.
+Air is injected into one of two cubic chambers separated by a solid partition.  The mass flux of air is 1~kg/(m$^2\cdot$s) through a vent that is 0.04~m$^2$ in area. After 25~s, the mass of air introduced should be 1~kg. The accumulation of air in the chamber is shown in Fig.~\ref{species_conservation}.
 
 \subsubsection{Case 3: Gases Released by Solid Phase Reactions within a Solid Obstruction}
 
- A 0.2~m solid cube undergoes a reaction that releases four different gases into a sealed unit cube. The solid has a density of 100~kg/m$^3$. The inert gases have different yields, all summing to one, meaning that the solid cube ought to be vaporized creating a total mass of 0.8~kg. The accumulation of all the gases in the chamber is shown in Fig.~\ref{species_conservation}. Note that in this case, when the solid cube vaporizes, its volume is filled with the background species, nitrogen. The total mass of the newly created nitrogen is 0.0093~kg.
+A 0.2~m solid cube undergoes a reaction that releases four different gases into a sealed unit cube. The solid has a density of 100~kg/m$^3$. The inert gases have different yields, all summing to one, meaning that the solid cube ought to be vaporized creating a total mass of 0.8~kg. The accumulation of all the gases in the chamber is shown in Fig.~\ref{species_conservation}. Note that in this case, when the solid cube vaporizes, its volume is filled with the background species, nitrogen. The total mass of the newly created nitrogen is 0.0093~kg.
 
 \subsubsection{Case 4: Gases Released by Solid Phase Reactions at the Boundary of the Domain}
 
- This case is similar to Case~3. A 0.2~m by 0.2~m solid surface undergoes a reaction that releases four different gases into a sealed unit cube. The solid has a density of 100~kg/m$^3$ and thickness of 0.1~m. The inert gases have different yields, all summing to one, meaning that the solid surface ought to be vaporized creating a total mass of 0.4~kg. The accumulation of all the gases in the chamber is shown in Fig.~\ref{species_conservation}.
+This case is similar to Case~3. A 0.2~m by 0.2~m solid surface undergoes a reaction that releases four different gases into a sealed unit cube. The solid has a density of 100~kg/m$^3$ and thickness of 0.1~m. The inert gases have different yields, all summing to one, meaning that the solid surface ought to be vaporized creating a total mass of 0.4~kg. The accumulation of all the gases in the chamber is shown in Fig.~\ref{species_conservation}.
 
 \begin{figure}[ht]
 \begin{tabular*}{\textwidth}{lr}
@@ -1929,6 +1929,26 @@ Propane is injected into a 4~m cube with 1~m$^2$ vents on all six faces.  The ma
 \end{tabular*}
 \caption[The \textct{species\_conservation} test cases]{Results of the \textct{species\_conservation} test cases. Case~1: Hot gas is injected at a very low flow rate into a 4~m cube. Case~2: Air is injected into one side of a partitioned compartment. Case~3: A solid cube vaporizes yielding four gases whose total mass is 0.8~kg. A small amount of nitrogen is created to fill the void left by the vaporized solid cube. Case~4: A patch of solid surface reacts to form four gases whose total mass is 0.4~kg.}
 \label{species_conservation}
+\end{figure}
+
+\subsection{Mass Flux through Domain Boundaries (\texorpdfstring{\textct{mass\_flux\_wall}}{mass\_flux\_wall})}
+\label{mass_flux_wall}
+
+This set of tests considers a specified mass injection of water vapor from a {\ct VENT} on the floor of a compartment.  The entire top of the compartment is {\ct OPEN} to the ambient.  The lighter water vapors are buoyant, so they rise creating a turbulent flow into and out of the domain.  Therefore, the input is steady, while the outflow of water vapor is quite chaotic.  To judge whether a proper mass balance is achieved by FDS we must monitor not only the inflow and outflow, but also the total mass of water vapor in the domain at a given time.  Therefore, we add {\ct DEVC} of quantity {\ct MASS\_FLUX\_WALL} and {\ct STATITSTICS=`SURFACE INTEGRAL`} for inflow and outflow, and we also add {\ct MASS\_FILE=.TRUE.} to the {\ct DUMP} line to monitor the total water vapor at any point in time in the domain.  With $\rho$ and $Y_{\mbox{\tiny H2O}}$ denoting the local mass density and mass fraction of water vapor in a cell, and with $\dot{m}_{\mbox{\tiny H2O}}^{\prime\prime}$ denoting the flux of water vapor at a cell face on the domain boundary, the mass balance may be written as,
+\begin{equation}
+\label{eq:H2O_mass_balance}
+\frac{\mbox{d}}{\mbox{d}t} \left( \int_{V} \rho Y_{\mbox{\tiny H2O}} \,\mbox{d}V \right) + \int_{S_{out}} \dot{m}_{\mbox{\tiny H2O}}^{\prime\prime} \,\mbox{d}S - \int_{S_{in}} \dot{m}_{\mbox{\tiny H2O}}^{\prime\prime} \,\mbox{d}S = 0
+\end{equation}
+
+Figure \ref{fig:H2O_mass_balance} shows the results of two cases that test the mass balance of water vapor in the domain just described.  The plot on the left tests lumped species balance.  In this case, the background humidity is set to zero and so the only water vapor in the domain is that of the tracked species injected at the bottom boundary.  In the second test case on the right we are showing the balance for the primitive species water vapor.  In this test, the background humidity is the default (40 \%) and so the output device must sum the water vapor contribution from the background air and the tracked species injected at the bottom.  In each plot, the blue and red lines show the inflow (blue, steady) and outflow (red, turbulent) as well as the balance from Eq.~\ref{eq:H2O_mass_balance} formed from the mass and devices files.  The balance (yellow line) fluctuates slightly around zero because of a first-order time error in reporting the boundary fluxes.  That is, within the actual simulation the mass transport equation is updated using a second-order Runge-Kutta scheme, whereas at the time the output routine is called the code does not have the machinery to perfectly reconstruct the second-order flux terms.
+
+\begin{figure}[ht]
+\begin{tabular*}{\textwidth}{lr}
+\includegraphics[height=2.2in]{SCRIPT_FIGURES/mass_flux_wall_zindex_mass_balance} &
+\includegraphics[height=2.2in]{SCRIPT_FIGURES/mass_flux_wall_yindex_mass_balance}
+\end{tabular*}
+\caption[The \textct{mass\_flux\_wall} test cases]{Results of the \textct{mass\_flux\_wall} test cases.  (Left) Lumped species balance, (Right) primitive species balance.}
+\label{fig:H2O_mass_balance}
 \end{figure}
 
 \subsection{Checking the Equation of State (\texorpdfstring{\textct{particle\_offgas}}{particle\_offgas})}
@@ -2600,46 +2620,22 @@ The predicted shield temperature is plotted in Fig.~\ref{radiation_shield_plot}.
 \section{Radiation from a gas-fired panel (\texorpdfstring{\textct{radiation\_gas\_panel}}{radiation\_gas\_panel}) }
 \label{radiation_gas_panel}
 
-A radiant gas-fired panel is often used to provide a source of heat flux in
-laboratory experiments.  Here, the heat flux received from a 1ft$^2$
-gas panel is computed at 0.1, 0.15, 0.25, 0.38, 0.46, 0.61 and 0.76 m
-distance from the panel along its center axis, and along the
-perpendicular axis displaced (0.14, 0.14) m from its center. The
-center-axis configuration is illustrated in
-Figure~\ref{radiation_gas_panel_plot}.  We
-compare the results computed by FDS to those calculated using the
-Stephan-Bolzmann law and configuration factors and, along the panel
-axis, with measurements taken by Simms \cite{Simms:1963} (see Table
-3 therein). In agreement with the values used by Simms, the
-temperature and emissivity of the panel are taken to be $1250^\circ$K
-and 0.7, respectively, and the ambient temperature taken to be
-$273^\circ$K.
+A gas-fired panel is often used as a source of thermal radiation in laboratory experiments.  Here, the heat flux from an $h=30.48$~cm square panel is computed at distances of 10~cm, 15~cm, 25~cm, 38~cm, 46~cm, 61~cm, and 76~cm along its perpendicular center axis, and along a perpendicular line that is displaced laterally 14~cm and vertically 14~cm from the center axis, as illustrated in Fig.~\ref{radiation_gas_panel_plot}.  We compare the results computed by FDS to those calculated using configuration factors. The temperature and emissivity of the panel are set to 1250~K and 0.7, respectively, and the ambient temperature is 273~K.
 
-The configuration factor $dF_{2 \rightarrow d1}$ describing the energy
-exchange between a radiant square panel with dimension $h$ and a
-target with differential area $dA_1$ located on a perpendicular
-extending from the panel at $(\overline{x}, \overline{y})$ relative to
-its center is computed using Equation~\eqref{eq:2->d1 configuration
-  factor - general}. Figure~\ref{radiation_gas_panel_plot} illustrates
-the configuration for $(\overline{x}, \overline{y}) = (0, 0)$.
+The configuration factor, $\d F_{2 \rightarrow 1}$, describing the energy exchange between the radiant panel and a target with differential area $\d A_1$ located on a perpendicular line extending from the panel at the point  $(\overline{x}, \overline{y})$ is computed from the following: 
 \begin{align}
- dF_{2 \rightarrow d1} (\overline{x}, \overline{y})
-    &= \frac{dA_1}{\pi A_2}
-        \int_{-h/2}^{h/2} \int_{-h/2}^{h/2} \frac{R^2}{\left[ (x-\overline{x})^2 + (y-\overline{y})^2 + R^2 \right]^2} dx dy.
+ \d F_{2 \rightarrow 1} (R; \overline{x}, \overline{y})
+    &= \frac{\d A_1}{\pi \, A_2}
+        \int_{-h/2}^{h/2} \int_{-h/2}^{h/2} \frac{R^2}{\left[ (x-\overline{x})^2 + (y-\overline{y})^2 + R^2 \right]^2} \d x \, \d y
  \label{eq:2->d1 configuration factor - general}
 \end{align}
+The comparison of FDS and the exact solution is shown in Fig.~\ref{radiation_gas_panel_plot}.
 
 \begin{figure}[ht]
 \centering
 \includegraphics[width=3.2in]{FIGURES/radiation_gas_panel_configuration}
 \includegraphics[width=3.2in]{SCRIPT_FIGURES/radiation_gas_panel}
-\caption[The \textct{radiation\_gas\_panel} case]{\emph{Left}: A
-  radiant panel and target dA$_1$ located a distance $R$ from
-  the panel on its center axis.  \emph{Right}: Heat flux from a
-  radiant panel at $1250^\circ$K  with emissivity 0.7 at 0.1, 0.15,
-  0.25, 0.38, 0.46, 0.61 and 0.76 m, along the panel's center axis,
-  and along the perpendicular axis displaced (0.14, 0.14) m from the
-  panel center.}
+\caption[The \textct{radiation\_gas\_panel} case]{\emph{Left}: A radiant panel and target dA$_1$ located a distance $R$ from the panel on its center axis.  \emph{Right}: Comparison of FDS and the exact result.}
 \label{radiation_gas_panel_plot}
 \end{figure}
 
@@ -2827,6 +2823,8 @@ The species evolutions are compared to expected values in Fig.~\ref{fig:reaction
 
 
 
+\FloatBarrier
+
 \subsection{Finite Rate Reactions (\texorpdfstring{\textct{reactionrate\_arrhenius}}{reactionrate\_arrhenius})}
 \label{finite_rate_reactions}
 \label{reactionrate_arrhenius_equilibrium}
@@ -2971,6 +2969,41 @@ Equilibrium values were determined using the NASA code Chemical Equilibrium with
 \end{figure}
 
 
+\FloatBarrier
+
+\subsection{Fast-Slow Reaction Scheme (\texorpdfstring{\textct{reactionrate\_fast\_slow}}{reactionrate\_fast\_slow})}
+\label{reactionrate_fast_slow}
+
+A simple two-step reaction scheme for a clean-burning fuel like methanol can be written as follows:
+\begin{subequations}
+\begin{align}
+\label{methanol_step1}
+\mathrm{CH_3OH + O_2} &\rightarrow \mathrm{CO + 2 \, H_2O} \\
+\label{methanol_step2}
+\mathrm{CO + 0.5 \, O_2} &\rightarrow \mathrm{CO_2}
+\end{align}
+\end{subequations}
+where the first reaction is infinitely fast and the second is not. Suppose the second reaction proceeds according to the evolution equation:
+\be
+   \frac{\d [{\rm CO}]}{\d t} = -1\times 10^{10} \, [{\rm CO}] \, [{\rm O_2}]
+\ee
+where $[{\rm CO}]$ is the concentration of CO in units of mol/cm$^3$. To test the scheme, a sealed, adiabatic cube 1~m on a side is filled with nitrogen, fuel gas, and oxygen with initial volume fractions of 0.89, 0.05, and 0.06. Because the rates are independent of temperature, the reaction proceeds immediately assuming that the gases are thoroughly mixed via the parameter {\ct INITIAL\_UNMIXED\_FRACTION=0}. Figure~\ref{fig:reactionrate_fast_slow} shows the fuel volume fraction very quickly dropping to zero, leaving some oxygen which then reacts relatively slowly with CO to form CO$_2$. The effective combined reaction is:
+\be
+\label{methanol_combined}
+\mathrm{5 \, CH_3OH + 6 \, O_2} \rightarrow \mathrm{2 \, CO_2 + 3 \, CO + 10 \, H_2O}
+\ee
+The {\ct 'EXPLICIT EULER'} integration scheme is used with an initial gas phase time step of $1\times 10^{-6}$~s. The final volume fractions of CO$_2$ and CO are expected to be $2/104 \approx 0.0192$ and $3/104 \approx 0.0288$, respectively.
+
+\begin{figure}[!ht]
+\centering
+\includegraphics[height=2.2in]{SCRIPT_FIGURES/reactionrate_fast_slow}
+\caption[Species evolution in a fast-slow reaction scheme]{Species evolution in a fast-slow reaction scheme.}
+\label{fig:reactionrate_fast_slow}
+\end{figure}
+
+\FloatBarrier
+
+
 \section{Heat Release Rates from Reaction Mechanisms (\textct{hrrpuv\_reac})}
 \label{hrrpuv_reac}
 \label{hrrpuv_reac_arrhenius}
@@ -3079,7 +3112,7 @@ The specific heat, $c_p$, for each species is set to 1~\si{kJ/(kg.K)} as in the 
 \section{Extinction Model (\textct{extinction})}
 \label{Extinct}
 
-The current extinction model used in FDS is based on the critical flame temperature concept \cite{SFPE:Beyler}. Within any computational cell, complete consumption of the limiting reactant must produce enough energy to raise the temperature of the cell above the critical flame temperature. In this approach the critical flame temperature is the adiabatic flame temperature at that particular fuel's lower flammability limit. If a critical flame temperature is not specified, the default value is 1600 K.
+The current extinction model used in FDS is based on the critical flame temperature concept \cite{SFPE:Beyler}. Within any computational cell, complete consumption of the limiting reactant must produce enough energy to raise the temperature of the cell above the critical flame temperature. In this approach the critical flame temperature is the adiabatic flame temperature at that particular fuel's lower flammability limit. If a critical flame temperature is not specified, the default value is 1700 K.
 
 Here, we examine a 10 $\times$ 10 array of cases: varying initial temperature from 300 K to 1875 K and initial fuel (methane) mass fraction from 0.05 to 0.95. The oxidizer is air which is assumed to be 23 \% oxygen  and 77 \% nitrogen by mass. A simple one-step methane reaction is used to govern combustion:
 \begin{equation}\label{eq:methane_ex}
@@ -3563,11 +3596,33 @@ as shown in the right hand plots of Fig.~\ref{adiabatic_flux}.
 \label{adiabatic_flux}
 \end{figure}
 
+\newpage
+
+\clearpage
 
 \section{Solid Heat Transfer 3D (Beta)}
 \label{sec:ht3d}
 
 This section presents test cases for solid phase heat diffusion (conduction) in 3D.  This feature is not yet connected to the 1D pyrolysis heat transfer code discussed in the previous sections.  Currently, the purpose of the HT3D functionality is to couple FDS with structural fire calculations.
+
+\subsection{3D vs 1D Heat Transfer (\texorpdfstring{\textct{ht3d\_vs\_ht1d}}{ht3d\_vs\_ht1d})}
+\label{ht3d_vs_ht1d}
+
+This case checks that the 3D heat conduction algorithm matches the 1D algorithm for a configuration that is only 1D. Consider a $\delta=0.02$~m thick block of tungsten that is insulated on the sides and back and exposed to $\dot{q}''=1350$~kW/m$^2$ for $\Delta t=7.15$~s. The density of tungsten is $\rho=19250$~kg/m$^3$ and the specific heat $c=0.132$~kJ/(kg$\cdot$K). Given an ambient temperature of $T_0=20$~$^\circ$C, the temperature of the block is expected to rise to:
+\be
+   T = T_0 + \frac{ \dot{q}'' \, \Delta t}{\delta \, c \, \rho} \approx 209.9 \; ^\circ \hbox{C}
+\ee
+as shown in Fig.~\ref{fig:ht3d_vs_ht1d}.
+
+\begin{figure}[ht]
+\centering
+\includegraphics[height=2.2in]{SCRIPT_FIGURES/ht3d_vs_ht1d}
+\caption[The \textct{ht3d\_vs\_ht1d} test case]{Comparison of the temperature rise based on a 3-D and 1-D heat conduction calculation.}
+\label{fig:ht3d_vs_ht1d}
+\end{figure}
+
+\FloatBarrier
+
 
 \subsection{1D Heat Diffusion in a Square Bar (\texorpdfstring{\textct{ht3d\_nx\_x}}{ht3d\_nx\_x})}
 \label{sec:heat_diff}
@@ -3599,12 +3654,16 @@ Figure \ref{fig:ht3d_diff} shows the results of the FDS convergence study for ea
 \begin{figure}[ht]
 \centering
 \begin{tabular*}{\textwidth}{l@{\extracolsep{\fill}}r}
+
 \includegraphics[height=2.2in]{SCRIPT_FIGURES/ht3d_test_1_profile} &
 \includegraphics[height=2.2in]{SCRIPT_FIGURES/ht3d_test_1_convergence} \\
 \end{tabular*}
 \caption[The \textct{ht3d\_nx\_x} test cases]{One-dimensional heat diffusion in a square bar. (Left) Initial and final profiles for each case.  (Right) Spatial order-of-accuracy plot showing second-order convergence for all three spatial directions.}
 \label{fig:ht3d_diff}
 \end{figure}
+
+\FloatBarrier
+
 
 \subsection{Continuous Heat Flux Boundary (\texorpdfstring{\textct{ht3d\_slab}}{ht3d\_slab})}
 \label{ht3d_slab}
@@ -3626,6 +3685,8 @@ The main purpose of this verification case is to check the accuracy of the conti
 \caption[The \textct{ht3d\_slab} test cases]{Test of continuous heat flux boundary condition for 3D heat transfer.}
 \label{fig:ht3d_slab}
 \end{figure}
+
+\FloatBarrier
 
 \subsection{3D Heat Diffusion in a Steel I-Beam (\texorpdfstring{\textct{ht3d\_ibeam}}{ht3d\_ibeam})}
 \label{ht3d_ibeam}
@@ -3656,6 +3717,8 @@ Figure \ref{fig:ht3d_ibeam_contours} shows a comparison between the surface temp
 \end{figure}
 
 
+\FloatBarrier
+
 \subsection{3D Heat Diffusion Across Mesh Boundaries (\texorpdfstring{\textct{ht3d\_2mesh}}{ht3d\_2mesh})}
 \label{sec:ht3d_2mesh}
 \label{ht3d_2mesh_x}
@@ -3671,16 +3734,17 @@ This set of cases tests the ability of the 3D heat conduction solver to transfer
 \label{fig:ht3d_2mesh}
 \end{figure}
 
+\FloatBarrier
 
 \subsection{3D Heat Diffusion in a Sphere (\texorpdfstring{\textct{ht3d\_sphere}}{ht3d\_sphere})}
 \label{sec:ht3d_sphere}
-\label{ht3d_sphere_75}
+\label{ht3d_sphere_102}
 \label{ht3d_sphere_51}
 \label{ht3d_sphere_25}
 
 \textbf{Salah Benkorichi, Ulster University}\\
 
-In this example, a solid sphere with internal heat generated at $\dot{q}^{\prime\prime\prime}$ = 200 \si{kW/m^3} is studied. The initial temperature at the boundary is set to \SI{20}{\degreeCelsius}. The objective of the test is to ensure that the heat conduction through the sphere and across the radius is computed properly. The heat conduction can be written as
+In this example, a solid sphere of radius 0.1 m with internal heat generated at $\dot{q}^{\prime\prime\prime}$ = 200 \si{kW/m^3} is studied. The initial temperature at the boundary is set to \SI{20}{\degreeCelsius}. The objective of the test is to ensure that the heat conduction through the sphere and across the radius is computed properly. The heat conduction can be written as
 \begin{equation}
 \label{eq:sphere}
 \frac{\partial T}{\partial t} = \alpha \left[ \frac{1}{r^2} \frac{\partial}{\partial r^2} \left( r^2 \frac{\partial T}{\partial r} \right) + \frac{\dot{q}^{\prime\prime\prime}}{k} \right]
@@ -3696,29 +3760,23 @@ where $T_0$ is the initial temperature and $a$ is the radius of the sphere. The 
 T = T_0 + \frac{\dot{q}^{\prime\prime\prime}}{6k} \left ( a^2 - r^2 \right ) + 2 \frac{\dot{q}^{\prime\prime\prime}a^3}{k\pi^3 r} \sum\limits_{n=1}^\infty \frac{(-1)^n}{n^3}\sin \left(\frac{n\pi r}{a}\right)\exp \left( -\alpha t \frac{n^2 \pi^2}{a^2} \right)
 \end{equation}
 
-The solution is run for 180 s from an initial condition of \SI{20}{\degreeCelsius}. In Fig.~\ref{fig:ht3d_sphere_time} we show the temperature contours at $t=165$ s for the medium resolution case\footnote{The reason for displaying the medium resolution image is that the high resolution case is run with multiple meshes and the overlap of the slice files shows mesh artifacts.} (left) and a comparison between the analytical and numerical solutions at several points in time for the high resolution case (right). Fig.~\ref{fig:ht3d_sphere_conv} shows the L1 and L2 norm errors decay as ${\cal O}(\Delta x)$.
+The solution is run for 180 s. In Fig.~\ref{fig:ht3d_sphere_time} we show the temperature contours at $t=165$ s for the medium resolution case (left) and a comparison between the analytical and numerical solutions at several points in time for the high resolution case (right). Fig.~\ref{fig:ht3d_sphere_conv} shows the $L_\infty$ error as a function of cell size.
 
 \begin{figure}[ht]
 \centering
-\begin{tabular*}{\textwidth}{l@{\extracolsep{\fill}}r}
- & \includegraphics[height=2.2in]{../FDS_Verification_Guide/SCRIPT_FIGURES/ht3d_sphere_51_165}
-\includegraphics[height=2.25in]{../FDS_Verification_Guide/SCRIPT_FIGURES/ht3d_sphere_profile}  \\
-\end{tabular*}
-
-\caption[The \textct{ht3d\_nx\_x} test cases]{(Left) Temperature contours at $t = 165$ s for $n=51$ cells across diameter. (Right) A comparison between the analytical and numerical solution for $n=75$ cells across diameter.}
+\includegraphics[height=2.2in]{../FDS_Verification_Guide/SCRIPT_FIGURES/ht3d_sphere_51_165}
+\includegraphics[height=2.2in]{../FDS_Verification_Guide/SCRIPT_FIGURES/ht3d_sphere_profile}
+\caption[The \textct{ht3d\_sphere} profiles]{(Left) Temperature contours at $t = 165$ s for $n=51$ cells across diameter. (Right) A comparison between radial profiles of the analytical and numerical solution at various times in the simulation.}
 \label{fig:ht3d_sphere_time}
 \end{figure}
 
 \begin{figure}[ht]
 \centering
-\begin{tabular*}{\textwidth}{l@{\extracolsep{\fill}}r}
- & \includegraphics[height=2.25in]{../FDS_Verification_Guide/SCRIPT_FIGURES/ht3d_sphere_convergence1}
-\includegraphics[height=2.25in]{../FDS_Verification_Guide/SCRIPT_FIGURES/ht3d_sphere_convergence2}  \\
-\end{tabular*}
-
-\caption[The \textct{ht3d\_sphere} test cases]{L1 (left) and L2 (right) norm errors in temperature for the convergence study with different cell numbers [75, 51, 25] from left to right. The plots demonstrate that errors decrease for decreasing cell size. L1 and L2 norm errors decay as ${\cal O}(\Delta x)$.}
+\includegraphics[height=2.2in]{../FDS_Verification_Guide/SCRIPT_FIGURES/ht3d_sphere_convergence1}
+\caption[The \textct{ht3d\_sphere} convergence]{$L_{\infty}$ error in sphere temperature at $t=180$ s with different cell numbers [102, 51, 25] from left to right.}
 \label{fig:ht3d_sphere_conv}
 \end{figure}
+
 
 
 \chapter{Pyrolysis}
@@ -4284,7 +4342,7 @@ The dashed curves in Fig.~\ref{mcc_plots} are the results of numerically integra
       MATL_ID               = 'char'
       NU_SPEC               = 0.51 /
 \end{lstlisting}
-Only the relevant parameters are shown. The other parameters are not relevant in this exercise. Note that \textct{REFERENCE\_TEMPERATURE} is $T_{\alpha,{\rm p}}$ in units of \si{\degree C}. \textct{REFERENCE\_RATE} is actually $r_{\alpha,{\rm p}}/Y_{\alpha,0}$, in units of s$^{-1}$. \textct{HEATING\_RATE} is $\beta$ in units of \si{\degree C}/min. \textct{NU\_MATL} is $\nu_{\rm r}$ and \textct{NU\_SPEC} is ($1-\nu_{\rm r}$). Table~\ref{cable_parameters} lists all of the kinetic parameters for the cable insulation and jacket materials. The peak temperatures are easy to estimate, and the values of $r_{p,i}/Y_{0,i}$ can be fine-tuned to closely match the data. Note that it is possible to compute values of $A_i$ and $E_i$ and input them directly into FDS, rather than inputting those listed in the table. However, the values of $A_i$ and $E_i$ are fairly large numbers and have little meaning in their own.
+Only the relevant parameters are shown. The other parameters are not relevant in this exercise. Note that \textct{REFERENCE\_TEMPERATURE} is $T_{\alpha,{\rm p}}$ in units of \si{\degreeCelsius}. \textct{REFERENCE\_RATE} is actually $r_{\alpha,{\rm p}}/Y_{\alpha,0}$, in units of s$^{-1}$. \textct{HEATING\_RATE} is $\beta$ in units of \si{\degree C}/min. \textct{NU\_MATL} is $\nu_{\rm r}$ and \textct{NU\_SPEC} is ($1-\nu_{\rm r}$). Table~\ref{cable_parameters} lists all of the kinetic parameters for the cable insulation and jacket materials. The peak temperatures are easy to estimate, and the values of $r_{p,i}/Y_{0,i}$ can be fine-tuned to closely match the data. Note that it is possible to compute values of $A_i$ and $E_i$ and input them directly into FDS, rather than inputting those listed in the table. However, the values of $A_i$ and $E_i$ are fairly large numbers and have little meaning in their own.
 
 \begin{table}[!htb]
 \centering
@@ -4300,10 +4358,49 @@ $r_{\alpha,{\rm p}}/Y_{\alpha,0}$ (s$^{-1}$)    & 0.0384        & 0.2426        
 \end{table}
 
 
+\section{Three-Dimensional Pyrolysis (PYRO3D) (Beta)}
+\label{sec:pyro3d}
 
 
+\subsection{Char Formation (\texorpdfstring{\textct{pyro3d\_wood\_char}}{pyro3d\_wood\_char})}
+\label{pyro3d_wood_char}
+
+This case is a simple mass conservation test for pyrolysis of wood into char and gas.  A small block of wood, 0.08 m on a side, is heated externally at 50 \si{kW/m^2} on all sides.  Gas phase combustion is suppressed.  The pyrolysis stoichiometry splits the wood to equal parts by mass of char and gas.  In Fig.~\ref{fig:pyro3d_wood_char}, you can see that the pine wood mass goes to zero, the char ends up with half the original wood mass, and the pyrolyzate gas production is equal to the char production.
+
+\begin{figure}[!ht]
+	\centering
+	\includegraphics[height=2.2in]{SCRIPT_FIGURES/pyro3d_wood_char}
+	\caption[PYRO3D char formation (the {\ct pyro3d\_wood\_char} case)]{Conversion of wood to char and pyrolyzate gas with 3D solid heat transfer and pyrolysis.}
+	\label{fig:pyro3d_wood_char}
+\end{figure}
 
 
+\subsection{Burn Away (\texorpdfstring{\textct{box\_burn\_away1\_pyro3d\_vs\_pyro1d}}{box\_burn\_away1\_pyro3d\_vs\_pyro1d})}
+\label{box_burn_away1_pyro3d_vs_pyro1d}
+
+This case is a replicate of the {\ct box\_burn\_away1} case used as verification of the 1D pyrolysis solver (PYRO1D).  A foam block 0.4 m on a side (0.064 \si{m^3}) with a bulk density of 20 \si{kg/m^3} (total mass of 1.28 kg) is heated from a wall kept at 1000 \si{\degreeCelsius}.  The gas phase (and hence 3D solid phase) grid resolution is relatively coarse, $\delta x = 0.1 \;\si{m}$.  However, the cell spacing for the 1D solver is internally computed to be approximately $3 \times 10^{-3} \;\si{m}$.  The 1D solver thus resolves the temperature gradient near the surface on the inside of the solid.  The 3D solver uses an internal wall model to enhance the heat flux into the solid cell.  Given the difference in bulk grid resolution, it is not surprising to find differences in the rate of pyrolysis.  The verification target here is simply the total mass of 1.28 kg.  It is worth noting that the 3D solver is reasonably time accurate at 100 times coarser resolution.
+
+\begin{figure}[!ht]
+	\centering
+	\includegraphics[height=2.2in]{SCRIPT_FIGURES/box_burn_away1_pyro3d_vs_pyro1d}
+	\caption[PYRO3D vs.~PYRO1D box burn away (the {\ct box\_burn\_away1\_pyro3d\_vs\_pyro1d} case)]{Comparison of burn away for 1D and 3D pyrolysis solvers.  Verification target is total mass.  Rate of pyrolysis varies between the methods due to the surface heat flux boundary condition and the difference in grid resolution.}
+	\label{fig:box_burn_away1_pyro3d_vs_pyro1d}
+\end{figure}
+
+\subsection{Mass Loss Rate and Thickness (\texorpdfstring{\textct{pyro3d\_vs\_pyro1d}}{pyro3d\_vs\_pyro1d})}
+\label{pyro3d_vs_pyro1d}
+
+This case compares mass loss rates and material thickness for pyrolysis of black PMMA between the 1D pyrolysis solver without burn away and the 3D solver with burn away.  The 3D solver is effectively solving a 1D problem, so the results should be very similar.  In-depth radiation absorption is not considered.  The problem is set up with insulating sides for each column of material.  The material is heated from the top with an external flux of 50 \si{kW/m^2}.  The material thickness is 0.01 m.  The grid resolution of the 3D solver is set to be equivalent to the node spacing for the 1D solver, $\delta z = 2.8571 \times 10^{-4} \;\si{m}$.  The key difference between the solvers is that in the 1D solver the top face of the {\ct OBST} does not move, instead the material {\ct THICKNESS} changes and shrinks from the bottom up.  Conversely, in the 3D solver, cells burn away as their mass goes to zero.  If the material mass of a given cell goes below a threshold, the mass is shifted to a neighboring cell before the cell is burned away.  The final cell burns down to a numerical threshold mass before that mass is finally clipped for numerical reasons.  We still track the local solid volume within a cell, and this ratio times the cell size gives a measure of the material thickness for the 3D solver. Fig.~\ref{fig:pyro3d_vs_pyro1d} shows mass loss rate per unit area (left) and the material thickness (right) for the 1D and 3D solutions.  Note that in the 3D solution the ``thickness'' is taken as the integral of the volume ratio $V_{\rm solid}/V_{\rm cell}$ over the height of the column.
+
+\begin{figure}[!ht]
+	\centering
+	\begin{tabular*}{\textwidth}{l@{\extracolsep{\fill}}r}
+       \includegraphics[height=2.2in]{SCRIPT_FIGURES/pyro3d_vs_pyro1d_mlr} &
+       \includegraphics[height=2.2in]{SCRIPT_FIGURES/pyro3d_vs_pyro1d_thickness}
+    \end{tabular*}
+	\caption[PYRO3D vs.~PYRO1D mass loss rate and material thickness (the {\ct pyro3d\_vs\_pyro1d} case)]{Comparison of thickness in 1D with burn away in 3D.  Verification targets are mass loss rate per unit area and material thickness curves.}
+	\label{fig:pyro3d_vs_pyro1d}
+\end{figure}
 
 \chapter{Lagrangian Particles}
 
@@ -4312,6 +4409,18 @@ This chapter contains verification cases that test all aspects of particles, dro
 \section{Particle and Droplet Drag}
 
 The cases in this section test accuracy, stability, and momentum conservation for the general case of momentum transfer between solid particles or liquid droplets and air. Details of the FDS integration scheme are given in the Technical Reference Guide~\cite{FDS_Tech_Guide}.  In short, we find an analytical solution for the case of binary fluid-particle interaction and apply this solution to the case of multiple particles by enforcing total momentum conservation within a fluid cell.  The resulting scheme is guaranteed to be stable because the fluid velocity cannot overshoot the cell equilibrium velocity (total momentum of fluid and particles divided by the total mass).
+
+\subsection{Dragless Particle (\texorpdfstring{\textct{cannon\_ball}}{cannon\_ball})}
+\label{cannon_ball}
+
+This simple case tests the particle transport scheme in the absence of drag. A 1~cm diameter sphere is shot from ground level with an initial velocity of $(u_0,v_0,w_0)=(10,10,10)$~m/s. The ball is expected to fall back to the ground in $t=2\, w_0/g\approx 2.04$~s at which time it will have travelled a horizontal distance of $d=t \sqrt{u_0^2+v_0^2}\approx 28.86$~m. The grid has a resolution of 1~m, and the default time step is 0.5~s. Thus, the particle trajectory is computed via only 5 calls to particle transport routine. However, the integration is performed using sub-steps such that the particle cannot cross farther than a single grid cell in a sub-step. This ensures an accurate computation of the trajectory, as shown in Fig.~\ref{cannon_ball_fig}.
+
+\begin{figure}[!ht]
+\centering
+\includegraphics[height=2.2in]{SCRIPT_FIGURES/cannon_ball}
+\caption[The {\ct cannon\_ball} case]{Horizontal distance travelled by a dragless sphere as a function of time.}
+\label{cannon_ball_fig}
+\end{figure}
 
 
 \subsection{Particles Swept Up in a Free Stream (\texorpdfstring{\textct{fluid\_part\_mom}}{fluid\_part\_mom})}
@@ -4957,8 +5066,21 @@ This case starts with the same input as \textct{leak\_test}.  A second leakage v
    \label{fig_HVAC_leak_fan}
 \end{figure}
 
+\subsection{Leak Pressure Exponent (\texorpdfstring{\textct{HVAC\_leak\_exponent}}{HVAC\_leak\_exponent})}
+\label{HVAC_leak_exponent}
 
+In a typical building as the interior pressure rises, the leakage area will grow as small gaps, cracks, and other leakage paths open up. Leakage tests performed according to test standards such as ASTM~E~779 provide two additional data points to quantify this behavior. These are the {\ct LEAK\_PRESSURE\_EXPONENT} and the {\ct LEAK\_REFERENCE\_PRESSURE}. The use of these additional inputs are shown in the equation below as $n$ and $\Delta p_{\rm ref}$ respectively where $A_{\rm L,ref}$ is given by {\ct LEAK\_AREA}.
+\be  A_{\rm L} = A_{\rm L,ref} \left( \frac{\Delta p}{\Delta p_{\rm ref}} \right)^{n-0.5} \ee
+By default, $n=0.5$ and $\Delta p_{\rm ref}=4$~Pa, meaning that the leak area will not change with pressure unless you specify an exponent other than 0.5.
 
+This verification case has three 1000~m$^3$ compartments have 0.01~m$^2$ of leakage to the ambient. Each compartment is supplied with 0.16~$m^3/s$ of inlet flow. The first compartment has the default values for the exponent and reference pressure, the second changes the exponent to 0.6, and the third third changes exponent and the reference pressure respectively to 0.6 and 10~Pa. The expected leakage velocities for these conditions are 160~m/s, 11.8~m/s, and 12.8~m/s. Note in Figure \ref{leak_exponent_fig} the velocities are negative as the FDS output for the leakage velocity is from the lower numbered pressure zone (in this case ambient) to the higher number (inside the compartment). Negative velocity indicates flow from inside to outside as expected.
+
+\begin{figure}[ht]
+	\centering
+	\includegraphics[width=3.5in]{SCRIPT_FIGURES/HVAC_leak_exponent}
+	\caption[The \textct{HVAC\_leak\_exponent} case]{Velocities through leakage with varying \textct{LEAK\_PRESSURE\_EXPONENT} and \textct{LEAK\_REFERENCE\_PRESSURE}}
+	\label{leak_exponent_fig}
+\end{figure}
 
 \section{ASHRAE Sample Problem 7\\(\texorpdfstring{\textct{ashrae\_7\_fixed\_flow}}{ashrae\_7\_fixed\_flow}, \texorpdfstring{\textct{ashrae\_7\_quadratic}}{ashrae\_7\_quadratic}, \texorpdfstring{\textct{ashrae\_7\_table}}{ashrae\_7\_table})}
 \label{ashrae7}
@@ -5132,13 +5254,15 @@ h_{\mbox{\tiny CFD}} = c_p V(T_{\mbox{\tiny left}} \rho_{\mbox{\tiny left}}+T_{\
 
 \chapter{Outputs}
 
-\section{Statistical Quantities (\texorpdfstring{\textct{rms\_cov\_corr}}{rms\_cov\_corr})}
+\section{Statistical Quantities}
+
+\subsection{RMS, Co-Variance, and Cross-Correlation (\texorpdfstring{\textct{rms\_cov\_corr}}{rms\_cov\_corr})}
 
 FDS can output the root mean square (RMS), co-variance, and cross-correlation for both point and line {\ct DEVC} outputs.  To test these outputs a 1 m$^3$ box with open sides and a 10 cm grid size is defined with two inlet vents centered on adjacent faces.  This results in two orthogonal flow streams that collide at the center of the box and exit diagonally.  Within the diagonal portion of the flow, are placed point measurements for the FDS outputs of the u-velocity RMS, the u-velocity/w-velocity co-variance, and the u-velocity/w-velocity cross-correlation.
 
 Computation of the these quantities by their typical statistical definition would require having the entire time history for the velocities.  This is obviously not possible during run-time.  Instead FDS computes the values using logarithmic averaging and a user-defined averaging window.  One would expect, once steady-state conditions are reached, that the FDS predicted values should approach the analytic values.  Results are shown in Fig.~\ref{rms_cov_corr_plots}.  In each figure the red line represents the value computed using the entire time history after steady-state is reached.  As seen, the FDS predicted values approach the analytic values.
 
-\begin{figure}[h!]
+\begin{figure}[p]
 \centering
 \begin{tabular}{l}
 \includegraphics[height=2.2in]{SCRIPT_FIGURES/rms_cov_corr_rms}\\
@@ -5149,7 +5273,43 @@ Computation of the these quantities by their typical statistical definition woul
 \label{rms_cov_corr_plots}
 \end{figure}
 
+\FloatBarrier
 
+\subsection{RMS as a Running Average (\texorpdfstring{\textct{rms\_example}}{rms\_example})}
+\label{rms_example}
+
+In this example, we want to compute the mean and rms of a hypothetical velocity time series
+\be
+   u(t) = \tanh(t) + {\cal U}(-0.5,0.5)
+\ee
+where ${\cal U}(-0.5,0.5)$ is a uniformly distributed random variable. The expected RMS of the time series beyond its initial transient is equal to the standard deviation of the uniform distribution over the unit interval, $\sigma=\sqrt{1/12}\approx 0.2887$. The expected mean is 1. This exercise is as much a check of the intrinsic random number generator in Fortran as it is the computation within FDS. Figure~\ref{rms_example_plot} displays the result.
+\begin{figure}[h!]
+\centering
+\includegraphics[height=2.2in]{SCRIPT_FIGURES/rms_example}
+\caption[Sample case \textct{rms\_example}]{Output of the \textct{rms\_example} test case in which the mean and RMS of the time series is compared to expected values.}
+\label{rms_example_plot}
+\end{figure}
+Note that this example is also a useful demonstration of how to use the math functions within FDS. Although there is not a tanh function included, it can be constructed from the expression:
+\be
+   \tanh(t) = \frac{{\rm e}^t - {\rm e}^{-t}}{{\rm e}^t + {\rm e}^{-t}}
+\ee
+using the base functions as shown below.
+\begin{lstlisting}
+&DEVC ID='rn',    QUANTITY='RANDOM NUMBER', XYZ=0,0,0 /
+&DEVC ID='t',     QUANTITY='TIME', XYZ=0,0,0 /
+&DEVC ID='u',     QUANTITY='CONTROL VALUE', CTRL_ID='sum', XYZ=0,0,1, UNITS='m/s' /
+&DEVC ID='u_rms', QUANTITY='CONTROL VALUE', CTRL_ID='sum', XYZ=0,0,1, UNITS='m/s',
+      STATISTICS='RMS', STATISTICS_START=5. /
+
+&CTRL ID='exp(t)',  FUNCTION_TYPE='EXP',      INPUT_ID='t' /
+&CTRL ID='-t',      FUNCTION_TYPE='MULTIPLY', INPUT_ID='t','CONSTANT', CONSTANT=-1. /
+&CTRL ID='exp(-t)', FUNCTION_TYPE='EXP',      INPUT_ID='-t' /
+&CTRL ID='num',     FUNCTION_TYPE='SUBTRACT', INPUT_ID='exp(t)','exp(-t)' /
+&CTRL ID='den',     FUNCTION_TYPE='SUM',      INPUT_ID='exp(t)','exp(-t)' /
+&CTRL ID='tanh',    FUNCTION_TYPE='DIVIDE',   INPUT_ID='num','den' /
+&CTRL ID='rn2',     FUNCTION_TYPE='SUBTRACT', INPUT_ID='rn','CONSTANT', CONSTANT=0.5 /
+&CTRL ID='sum',     FUNCTION_TYPE='SUM',      INPUT_ID='tanh','rn2' /
+\end{lstlisting}
 
 
 

@@ -614,7 +614,7 @@ WALL_INSERT_LOOP: DO IW=1,N_EXTERNAL_WALL_CELLS+N_INTERNAL_WALL_CELLS
          DO I=1,SF%NPPC
             N = LP_INDEX_LOOKUP(I)
             LP => LAGRANGIAN_PARTICLE(N)
-            LP%PWT = LP%PWT * FLOW_RATE*WALL(IW)%ONE_D%AREA_ADJUST*WALL(IW)%AW*SF%DT_INSERT/MASS_SUM
+            LP%PWT = LP%PWT * FLOW_RATE*WALL(IW)%ONE_D%AREA_ADJUST*WALL(IW)%ONE_D%AREA*SF%DT_INSERT/MASS_SUM
          ENDDO
       ENDIF
    ENDIF
@@ -911,7 +911,10 @@ SUBROUTINE VOLUME_INIT_PARTICLE
 
 ! Initialize particle indices and velocity
 
+USE OUTPUT_DATA, ONLY: N_PROF
 INTEGER :: ND
+TYPE (PROFILE_TYPE), POINTER :: PF
+
 IN => INITIALIZATION(IB)
 LP => LAGRANGIAN_PARTICLE(NLP)
 
@@ -922,14 +925,15 @@ LP%U = IN%U0
 LP%V = IN%V0
 LP%W = IN%W0
 
-! If the INITIALIZATION group has an ID, match it with a device
+! If the INITIALIZATION group has an ID, match it with a DEVC (device) and/or PROFile
 
 IF (IN%ID/='null') THEN
+
    DO ND=1,N_DEVC
       DV => DEVICE(ND)
       IF (IN%ID==DV%INIT_ID .AND. IP==DV%POINT) THEN
          DV%LP_TAG = PARTICLE_TAG
-         DV%PART_INDEX = ILPC
+         DV%PART_CLASS_INDEX = ILPC
          DV%MESH = NM
          DV%X = LP%X
          DV%Y = LP%Y
@@ -941,6 +945,19 @@ IF (IN%ID/='null') THEN
          ENDIF
       ENDIF
    ENDDO
+
+   DO ND=1,N_PROF
+      PF => PROFILE(ND)
+      IF (IN%ID==PF%INIT_ID) THEN
+         PF%LP_TAG = PARTICLE_TAG
+         PF%PART_CLASS_INDEX = ILPC
+         PF%MESH = NM
+         PF%X = LP%X
+         PF%Y = LP%Y
+         PF%Z = LP%Z
+      ENDIF
+   ENDDO
+
 ENDIF
 
 ! Process particle and set more initial values
@@ -1217,8 +1234,10 @@ CALL POINT_TO_MESH(NM)
 
 ! Move the PARTICLEs/particles, then compute mass and energy transfer, then add PARTICLE momentum to gas
 
-IF (CORRECTOR) CALL MOVE_PARTICLES(T,DT,NM)
-IF (CORRECTOR .AND. EVAPORATION) CALL PARTICLE_MASS_ENERGY_TRANSFER(T,DT,NM)
+IF (CORRECTOR) THEN
+   CALL MOVE_PARTICLES(T,DT,NM)
+   CALL PARTICLE_MASS_ENERGY_TRANSFER(T,DT,NM)
+ENDIF
 
 T_USED(8)=T_USED(8)+CURRENT_TIME()-TNOW
 
@@ -1323,7 +1342,7 @@ PARTICLE_LOOP: DO IP=1,NLP
 
       ! Throw out particles that are inside a solid obstruction
 
-      IF (SOLID(IC_OLD)) THEN
+      IF (SOLID(IC_OLD) .OR. EXTERIOR(IC_OLD)) THEN
          LP%X = 1.E6_EB
          CYCLE PARTICLE_LOOP
       ENDIF
@@ -1350,7 +1369,7 @@ PARTICLE_LOOP: DO IP=1,NLP
          IC_OLD = CELL_INDEX(IIG_OLD,JJG_OLD,1)
          IW = WALL_INDEX(IC_OLD,-3)
          IF (WALL(IW)%BOUNDARY_TYPE==SOLID_BOUNDARY .AND. ACCUMULATE_WATER .AND. .NOT.LP%SPLAT) THEN
-            WALL(IW)%A_LP_MPUA(LPC%ARRAY_INDEX) = WALL(IW)%A_LP_MPUA(LPC%ARRAY_INDEX) + LP%PWT*LPC%FTPR*R_D**3/WALL(IW)%AW
+            WALL(IW)%A_LP_MPUA(LPC%ARRAY_INDEX) = WALL(IW)%A_LP_MPUA(LPC%ARRAY_INDEX) + LP%PWT*LPC%FTPR*R_D**3/WALL(IW)%ONE_D%AREA
             LP%SPLAT = .TRUE.
          ENDIF
          CYCLE PARTICLE_LOOP
@@ -1446,7 +1465,7 @@ PARTICLE_LOOP: DO IP=1,NLP
 
             IF (ACCUMULATE_WATER .AND. .NOT.LP%SPLAT .AND. LPC%LIQUID_DROPLET) THEN
                WALL(LP%WALL_INDEX)%A_LP_MPUA(LPC%ARRAY_INDEX) = WALL(LP%WALL_INDEX)%A_LP_MPUA(LPC%ARRAY_INDEX)+&
-                  LP%PWT*LPC%FTPR*R_D**3/WALL(LP%WALL_INDEX)%AW
+                  LP%PWT*LPC%FTPR*R_D**3/WALL(LP%WALL_INDEX)%ONE_D%AREA
                LP%SPLAT = .TRUE.
             ENDIF
 
@@ -1920,7 +1939,7 @@ REAL(EB) :: R_DROP,NUSSELT,K_AIR,H_V,H_V_REF, H_L,H_V2,&
             T_BOIL_EFF,P_RATIO,RAYLEIGH,GR,RHOCBAR,MCBAR,&
             M_GAS_OLD,TMP_G_OLD,NU_LIQUID,H1,H2,TMP_FILM,CP_BAR_2
 REAL(EB), PARAMETER :: RUN_AVG_FAC=0.5_EB
-INTEGER :: IP,II,JJ,KK,IW,N_LPC,NS,N_SUBSTEPS,ITMP,ITMP2,ITCOUNT,Y_INDEX,Z_INDEX,I_BOIL,I_MELT,I_FUEL,NMAT
+INTEGER :: IP,II,JJ,KK,IW,N_LPC,NS,ITMP,ITMP2,ITCOUNT,Y_INDEX,Z_INDEX,I_BOIL,I_MELT,I_FUEL,NMAT
 REAL(EB), INTENT(IN) :: T,DT
 INTEGER, INTENT(IN) :: NM
 LOGICAL :: TEMPITER
@@ -2003,7 +2022,7 @@ SPECIES_LOOP: DO Z_INDEX = 1,N_TRACKED_SPECIES
       IF (LPC%Z_INDEX/=Z_INDEX) CYCLE FILM_SUMMING_LOOP
       IF (LP%ONE_D%X(1)<=LPC%KILL_RADIUS) CYCLE FILM_SUMMING_LOOP
       IW = LP%WALL_INDEX
-      FILM_THICKNESS(IW) = FILM_THICKNESS(IW) + LP%PWT*LP%ONE_D%X(1)**3/WALL(IW)%AW
+      FILM_THICKNESS(IW) = FILM_THICKNESS(IW) + LP%PWT*LP%ONE_D%X(1)**3/WALL(IW)%ONE_D%AREA
    ENDDO FILM_SUMMING_LOOP
 
    FILM_THICKNESS = MAX(MINIMUM_FILM_THICKNESS,FOTHPI*FILM_THICKNESS)
@@ -2029,8 +2048,7 @@ SPECIES_LOOP: DO Z_INDEX = 1,N_TRACKED_SPECIES
       I_BOIL   = INT(T_BOIL_EFF)
       ! Determine how many sub-time step iterations are needed and then iterate over the time step.
 
-      N_SUBSTEPS = N_INITIAL_PARTICLE_SUBSTEPS
-      DT_SUBSTEP = DT/REAL(N_SUBSTEPS,EB)
+      DT_SUBSTEP = DT/REAL(N_INITIAL_PARTICLE_SUBSTEPS,EB)
       DT_SUM = 0._EB
       WGT    = LP%PWT
 
@@ -2084,7 +2102,7 @@ SPECIES_LOOP: DO Z_INDEX = 1,N_TRACKED_SPECIES
 
                IW   = LP%WALL_INDEX
                A_DROP = M_DROP/(FILM_THICKNESS(IW)*LPC%DENSITY)
-               Q_DOT_RAD = MIN(A_DROP,WALL(IW)%AW/LP%PWT)*WALL(IW)%ONE_D%QRADIN
+               Q_DOT_RAD = MIN(A_DROP,WALL(IW)%ONE_D%AREA/LP%PWT)*WALL(IW)%ONE_D%QRADIN
                TMP_WALL = MAX(TMPMIN,TMP_WALL_INTERIM(IW))
             ELSE SOLID_OR_GAS_PHASE_1
                IW = -1
@@ -2182,7 +2200,7 @@ SPECIES_LOOP: DO Z_INDEX = 1,N_TRACKED_SPECIES
                               EVALUATE_RAMP(TMP_WALL,0._EB,-NINT(MATERIAL(SF%MATL_INDEX(NMAT))%C_S))
                         ENDIF
                      ENDDO
-                     MCBAR = RHOCBAR*WALL(IW)%AW*(WALL(IW)%ONE_D%X(1)-WALL(IW)%ONE_D%X(0))
+                     MCBAR = RHOCBAR*WALL(IW)%ONE_D%AREA*(WALL(IW)%ONE_D%X(1)-WALL(IW)%ONE_D%X(0))
                      ARRAY_CASE = 3
                   ELSE
                      MCBAR = -1._EB
@@ -2372,12 +2390,14 @@ SPECIES_LOOP: DO Z_INDEX = 1,N_TRACKED_SPECIES
                IF (TMP_DROP_NEW < 0.9999_EB*TMP_DROP .AND. 1.05_EB*Y_EQUIL < Y_GAS_NEW .AND. M_VAP > 0._EB) THEN
                   IF (Y_GAS_NEW - Y_GAS > 1.E-7_EB) THEN
                      DT_SUBSTEP = DT_SUBSTEP * 0.5_EB
-                     N_SUBSTEPS = NINT(DT/DT_SUBSTEP)
                      IF (DT_SUBSTEP <= 0.00001_EB*DT) THEN
-                        CALL SHUTDOWN('Numerical instability in particle energy transport, Y_EQUIL < Y_GAS_NEW')
-                        RETURN
+                        DT_SUBSTEP = DT_SUBSTEP * 2.0_EB
+                        WRITE(LU_ERR,'(A,I0,A,I0)') 'WARNING Y_EQ < Y_G_N. Mesh: ',NM,'Particle: ',IP
+                        !CALL SHUTDOWN('Numerical instability in particle energy transport, Y_EQUIL < Y_GAS_NEW')
+                        !RETURN
+                     ELSE
+                        CYCLE TIME_ITERATION_LOOP
                      ENDIF
-                     CYCLE TIME_ITERATION_LOOP
                   ENDIF
                ENDIF
 
@@ -2386,12 +2406,14 @@ SPECIES_LOOP: DO Z_INDEX = 1,N_TRACKED_SPECIES
                IF (Y_GAS < Y_EQUIL .AND. M_VAP > 0._EB) THEN
                   IF (Y_GAS_NEW/Y_EQUIL > 1.01_EB) THEN
                      DT_SUBSTEP = DT_SUBSTEP * 0.5_EB
-                     N_SUBSTEPS = NINT(DT/DT_SUBSTEP)
                      IF (DT_SUBSTEP <= 0.00001_EB*DT) THEN
-                        CALL SHUTDOWN('Numerical instability in particle energy transport, Y_GAS_NEW > Y_EQUIL')
-                        RETURN
-                     ENDIF
+                        DT_SUBSTEP = DT_SUBSTEP * 2.0_EB
+                        WRITE(LU_ERR,'(A,I0,A,I0)') 'WARNING Y_G_N > Y_EQ. Mesh: ',NM,'Particle: ',IP
+                        !CALL SHUTDOWN('Numerical instability in particle energy transport, Y_GAS_NEW > Y_EQUIL')
+                        !RETURN
+                     ELSE
                      CYCLE TIME_ITERATION_LOOP
+                     ENDIF
                   ENDIF
                ENDIF
 
@@ -2422,7 +2444,6 @@ SPECIES_LOOP: DO Z_INDEX = 1,N_TRACKED_SPECIES
 
                   IF (TMP_G_I < 0._EB) THEN
                      DT_SUBSTEP = DT_SUBSTEP * 0.5_EB
-                     N_SUBSTEPS = NINT(DT/DT_SUBSTEP)
                      CYCLE TIME_ITERATION_LOOP
                   ENDIF
 
@@ -2440,12 +2461,14 @@ SPECIES_LOOP: DO Z_INDEX = 1,N_TRACKED_SPECIES
 
                IF (ABS(TMP_G_NEW/TMP_G - 1._EB) > 0.05_EB) THEN
                   DT_SUBSTEP = DT_SUBSTEP * 0.5_EB
-                  N_SUBSTEPS = NINT(DT/DT_SUBSTEP)
                   IF (DT_SUBSTEP <= 0.00001_EB*DT) THEN
-                     CALL SHUTDOWN('Numerical instability in particle energy transport, TMP_G')
-                     RETURN
+                     DT_SUBSTEP = DT_SUBSTEP * 2.0_EB
+                     WRITE(LU_ERR,'(A,I0,A,I0)') 'WARNING Delta TMP_G. Mesh: ',NM,'Particle: ',IP
+                     !CALL SHUTDOWN('Numerical instability in particle energy transport, TMP_G')
+                     !RETURN
+                  ELSE
+                     CYCLE TIME_ITERATION_LOOP
                   ENDIF
-                  CYCLE TIME_ITERATION_LOOP
                ENDIF
 
                CALL INTERPOLATE1D_UNIFORM(LBOUND(SS%C_P_L_BAR,1),SS%C_P_L_BAR,TMP_DROP_NEW,H_L)
@@ -2453,10 +2476,13 @@ SPECIES_LOOP: DO Z_INDEX = 1,N_TRACKED_SPECIES
 
                IF (TMP_G_NEW < 0.9999_EB*TMP_G .AND. TMP_G_NEW < TMP_DROP_NEW) THEN
                   DT_SUBSTEP = DT_SUBSTEP * 0.5_EB
-                  N_SUBSTEPS = NINT(DT/DT_SUBSTEP)
                   IF (DT_SUBSTEP <= 0.00001_EB*DT) THEN
-                     CALL SHUTDOWN('Numerical instability in particle energy transport, TMP_G_NEW < TMP_G')
-                     RETURN
+                     DT_SUBSTEP = DT_SUBSTEP * 2.0_EB
+                     WRITE(LU_ERR,'(A,I0,A,I0)') 'WARNING TMP_G_N < TMP_D_N. Mesh: ',NM,'Particle: ',IP
+                     !CALL SHUTDOWN('Numerical instability in particle energy transport, TMP_G_NEW < TMP_G')
+                     !RETURN
+                  ELSE
+                     CYCLE TIME_ITERATION_LOOP
                   ENDIF
                ENDIF
 
@@ -2508,8 +2534,9 @@ SPECIES_LOOP: DO Z_INDEX = 1,N_TRACKED_SPECIES
                ! Compute surface cooling
 
                IF (IW > 0) THEN
-                  WALL(IW)%LP_CPUA(LPC%ARRAY_INDEX) = WALL(IW)%LP_CPUA(LPC%ARRAY_INDEX) + OMRAF*WGT*Q_CON_WALL/(WALL(IW)%AW*DT)
-                  WALL(IW)%ONE_D%QRADIN = (WALL(IW)%AW*DT*WALL(IW)%ONE_D%QRADIN - WGT*DT*Q_DOT_RAD)/(WALL(IW)%AW*DT)
+                  WALL(IW)%LP_CPUA(LPC%ARRAY_INDEX) = WALL(IW)%LP_CPUA(LPC%ARRAY_INDEX) + &
+                                                      OMRAF*WGT*Q_CON_WALL/(WALL(IW)%ONE_D%AREA*DT)
+                  WALL(IW)%ONE_D%QRADIN = (WALL(IW)%ONE_D%AREA*DT*WALL(IW)%ONE_D%QRADIN - WGT*DT*Q_DOT_RAD)/(WALL(IW)%ONE_D%AREA*DT)
                ENDIF
 
             ENDIF BOIL_ALL
@@ -2593,7 +2620,7 @@ SUM_PART_QUANTITIES: IF (N_LP_ARRAY_INDICES > 0) THEN
             R_DROP = LP%ONE_D%X(1)
             FTPR   = FOTHPI * LP%ONE_D%RHO(1,1)
             M_DROP = FTPR*R_DROP**3
-            WALL(IW)%LP_MPUA(LPC%ARRAY_INDEX) = WALL(IW)%LP_MPUA(LPC%ARRAY_INDEX) + OMRAF*LP%PWT*M_DROP/WALL(IW)%AW
+            WALL(IW)%LP_MPUA(LPC%ARRAY_INDEX) = WALL(IW)%LP_MPUA(LPC%ARRAY_INDEX) + OMRAF*LP%PWT*M_DROP/WALL(IW)%ONE_D%AREA
          ENDIF
 
       ENDDO PARTICLE_LOOP_2
