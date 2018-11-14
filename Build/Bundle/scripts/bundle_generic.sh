@@ -45,11 +45,11 @@ CP ()
     cp $FROMDIR/$FROMFILE $TODIR/$TOFILE
   fi
   if [ -e $TODIR/$TOFILE ]; then
-    echo "$FROMFILE copied"
+    echo "$FROMFILE copied to $TODIR/$TOFILE"
   else
     if [ "ERR" == "" ]; then
-      echo "***error: $FROMFILE could not be copied to $DIR" >> $errlog
-      echo "***error: $FROMFILE could not be copied to $DIR"
+      echo "***error: $FROMFILE could not be copied from $FROMDIR to $TODIR" >> $errlog
+      echo "***error: $FROMFILE could not be copied from $FROMDIR to $TODIR"
       if [ "$NOPAUSE" == "" ]; then
         read val
       fi
@@ -164,7 +164,7 @@ CPDIRFILES ()
   FROMDIR=$1
   TODIR=$2
   ERR=
-  if [ ! -e $FROMDIR ]; then
+  if [ ! -d $FROMDIR ]; then
     echo "***error: the directory $FROMDIR does not exist" >> $errlog
     echo "***error: the directory $FROMDIR does not exist"
     ERR="1"
@@ -193,9 +193,11 @@ CPDIRFILES ()
 # VVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV
 if [ "`uname`" == "Darwin" ]; then
   FDSOS=_osx_64
+  OS=_osx
   PLATFORM=OSX64
 else
   FDSOS=_linux_64
+  OS=_linux
   PLATFORM=LINUX64
 fi
 
@@ -230,12 +232,21 @@ if [ "$MPI_VERSION" == "INTEL" ]; then
   fdsmpidirdb=impi_intel$FDSOS$DB
   fdsmpidb=fds_impi_intel$FDSOS$DB
 else
+  fdsmpidir=mpi_intel$FDSOS
+  fdsmpi=fds_mpi_intel$FDSOS
   fdsmpidirdb=mpi_intel$FDSOS$DB
   fdsmpidb=fds_mpi_intel$FDSOS$DB
 fi
 
 fds2asciidir=intel$FDSOS
 fds2ascii=fds2ascii$FDSOS
+
+if [ "$MPI_VERSION" == "INTEL" ]; then
+  testmpidir=impi_intel$OS
+else
+  testmpidir=mpi_intel$OS
+fi
+testmpi=test_mpi
 
 scp_fds_smvroot=$fds_smvroot
 fds_smvroot=~/$fds_smvroot
@@ -247,14 +258,15 @@ dem2fdsroot=$scp_fds_smvroot/smv/Build/dem2fds
 smvscriptdir=$scp_fds_smvroot/smv/scripts
 wind2fdsroot=$scp_fds_smvroot/smv/Build/wind2fds
 hashfileroot=$scp_fds_smvroot/smv/Build/hashfile
-uploaddir=$fds_smvroot/fds/Utilities/uploads
+uploaddir=$fds_smvroot/fds/Build/Bundle/uploads
 bundledir=$bundlebase
 webpagesdir=$fds_smvroot/webpages
 smvbindir=$scp_fds_smvroot/smv/Build/smokeview/$smokeviewdir
-fds_bundle=$fds_smvroot/fds/Utilities/Scripts/for_bundle
-smv_bundle=$fds_smvroot/smv/for_bundle
+fds_bundle=$fds_smvroot/fds/Build/Bundle/for_bundle
+smv_bundle=$fds_smvroot/smv/Build/Bundle/for_bundle
 texturedir=$smv_bundle/textures
 fds2asciiroot=$scp_fds_smvroot/fds/Utilities/fds2ascii
+testmpiroot=$scp_fds_smvroot/fds/Utilities/test_mpi
 makeinstaller=$fds_smvroot/fds/Utilities/Scripts/make_installer.sh
 
 fds_cases=$fds_smvroot/fds/Verification/FDS_Cases.sh
@@ -311,11 +323,13 @@ if [ "$fds_debug" == "1" ]; then
   SCP $fdshost $fdsroot/$fdsmpidirdb      $fdsmpidb  $bundledir/bin fds_db
 fi
 SCP $fdshost $fds2asciiroot/$fds2asciidir $fds2ascii $bundledir/bin fds2ascii
+SCP $fdshost $testmpiroot/$testmpidir $testmpi $bundledir/bin test_mpi
 
 CURDIR=`pwd`
 cd $bundledir/bin
 hashfile fds       > hash/fds.sha1
 hashfile fds2ascii > hash/fds2ascii.sha1
+hashfile test_mpi > hash/test_mpi.sha1
 cd $CURDIR
 
 if [ "$MPI_VERSION" != "INTEL" ]; then
@@ -331,14 +345,10 @@ echo ""
 echo "--- copying configuration files ---"
 echo ""
 
-CP $fds_bundle README_repo.html   $bundledir/Documentation README_repo.html
-
-CP $smv_bundle smokeview.ini $bundledir/bin smokeview.ini
-
-CP $smv_bundle volrender.ssf $bundledir/bin volrender.ssf
-
-CP $smv_bundle objects.svo   $bundledir/bin objects.svo
-
+CP $fds_bundle README_repo.html $bundledir/Documentation README_repo.html
+CP $smv_bundle smokeview.ini    $bundledir/bin smokeview.ini
+CP $smv_bundle volrender.ssf    $bundledir/bin volrender.ssf
+CP $smv_bundle objects.svo      $bundledir/bin objects.svo
 if [ "$MPI_VERSION" != "INTEL" ]; then
   CP $OPENMPI_DIR $openmpifile  $bundledir/bin $openmpifile
 fi
@@ -346,54 +356,46 @@ fi
 echo ""
 echo "--- copying documentation ---"
 echo ""
-CP2 $GUIDE_DIR FDS_Config_Management_Plan.pdf $bundledir/Documentation
+CP2 $GUIDE_DIR FDS_Config_Management_Plan.pdf    $bundledir/Documentation
 CP2 $GUIDE_DIR FDS_Technical_Reference_Guide.pdf $bundledir/Documentation
-CP2 $GUIDE_DIR FDS_User_Guide.pdf $bundledir/Documentation
-CP2 $GUIDE_DIR FDS_Validation_Guide.pdf $bundledir/Documentation
-CP2 $GUIDE_DIR FDS_Verification_Guide.pdf $bundledir/Documentation
-CP2 $GUIDE_DIR SMV_User_Guide.pdf $bundledir/Documentation
+CP2 $GUIDE_DIR FDS_User_Guide.pdf                $bundledir/Documentation
+CP2 $GUIDE_DIR FDS_Validation_Guide.pdf          $bundledir/Documentation
+CP2 $GUIDE_DIR FDS_Verification_Guide.pdf        $bundledir/Documentation
+CP2 $GUIDE_DIR SMV_User_Guide.pdf                $bundledir/Documentation
 CP2 $GUIDE_DIR SMV_Technical_Reference_Guide.pdf $bundledir/Documentation
-CP2 $GUIDE_DIR SMV_Verification_Guide.pdf $bundledir/Documentation
+CP2 $GUIDE_DIR SMV_Verification_Guide.pdf        $bundledir/Documentation
 
 
-if [ ! "$INTELBINDIR" == "" ]; then
-  if [ -d $INTELBINDIR ]; then
-    if [ "$MPI_VERSION" == "INTEL" ]; then
+if [[ "$INTEL_BIN_DIR" != "" ]] && [[ -e $INTEL_BIN_DIR ]]; then
+  if [ "$MPI_VERSION" == "INTEL" ]; then
     echo ""
     echo "--- copying Intel exe's ---"
     echo ""
-      CP $INTELBINDIR mpiexec   $bundledir/bin mpiexec
-      CP $INTELBINDIR pmi_proxy $bundledir/bin pmi_proxy
-    fi
+    CP $INTEL_BIN_DIR mpiexec   $bundledir/bin mpiexec
+    CP $INTEL_BIN_DIR pmi_proxy $bundledir/bin pmi_proxy
+  fi
+  echo ""
+  echo "--- copying compiler run time libraries ---"
+  echo ""
+  if [[ "$INTEL_LIB_DIR" != "" ]] && [[ -e $INTEL_LIB_DIR ]]; then
+    CP $INTEL_LIB_DIR libiomp5.so      $bundledir/bin/LIB64 libiomp5.so
+    CP $INTEL_LIB_DIR libmpifort.so.12 $bundledir/bin/LIB64 libmpifort.so.12
+    CP $INTEL_LIB_DIR libmpi.so.12     $bundledir/bin/LIB64 libmpi.so.12
   fi
 fi
-if [ "$INTELLIBDIR" != "" ]; then
-  if [ -d $INTELLIBDIR ]; then
-
-    echo ""
-    echo "--- copying compiler run time libraries ---"
-    echo ""
-    CP $INTELLIBDIR libiomp5.so      $bundledir/bin/LIB64 libiomp5.so
-    CP $INTELLIBDIR libmpifort.so.12 $bundledir/bin/LIB64 libmpifort.so.12
-    CP $INTELLIBDIR libmpi.so.12     $bundledir/bin/LIB64 libmpi.so.12
-  fi
-fi
-if [ "$OSLIBDIR" != "" ]; then
-  if [ -d $OSLIBDIR ]; then
-
-    echo ""
-    echo "--- copying miscellaneous run time libraries ---"
-    echo ""
-    CPDIRFILES $OSLIBDIR $bundledir/bin/LIB64
-  fi
+if [[ "$OS_LIB_DIR" != "" ]] && [[ -e $OS_LIB_DIR ]]; then
+  echo ""
+  echo "--- copying run time libraries ---"
+  echo ""
+  CPDIRFILES $OS_LIB_DIR $bundledir/bin/LIB64
 fi
 
 echo ""
 echo "--- copying release notes ---"
 echo ""
-CP $fds_bundle FDS_Release_Notes.htm $bundledir/Documentation FDS_Release_Notes.html
 
-CP $webpagesdir smv_readme.html $bundledir/Documentation SMV_Release_Notes.html
+CP $webpagesdir FDS_Release_Notes.htm $bundledir/Documentation FDS_Release_Notes.html
+CP $webpagesdir smv_readme.html       $bundledir/Documentation SMV_Release_Notes.html
 
 
 # CP2 $fds_bundle readme_examples.html $bundledir/Examples
@@ -427,6 +429,7 @@ echo Compressing archive
 gzip    ../$bundlebase.tar
 echo Creating installer
 cd ..
+bundlepath=`pwd`/$bundlebase.sh
 $makeinstaller -i $bundlebase.tar.gz -d $INSTALLDIR $bundlebase.sh
 
 mkdir -p $BUNDLE_DIR
@@ -450,4 +453,5 @@ if [ -e $errlog ]; then
   fi
   rm $errlog
 fi
-
+echo installer located at:
+echo $bundlepath

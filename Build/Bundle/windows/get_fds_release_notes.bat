@@ -1,4 +1,5 @@
 @echo off
+set from=%1
 
 :: Batch file used to convert FDS wiki to html
 
@@ -35,7 +36,10 @@ git merge origin/master
 echo.
 echo Converting the FDS release notes from wiki to html format
 
-cd %svn_root%\fds\Utilities\Scripts\for_bundle
+cd %svn_root%\webpages
 pandoc -o FDS_Release_Notes.htm %fdswikirepo%\FDS-Release-Notes.md
 cd %CURDIR%
+
+if x%from% == xbot goto skip1
 pause
+:skip1

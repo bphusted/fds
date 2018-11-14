@@ -14,7 +14,6 @@ then
 fi
 
 FDSMODULE=$FDSEDITION
-SMVMODULE=$SMVEDITION
 
 FDSVARS=${FDSEDITION}VARS.sh
 INSTALLDIR=
@@ -76,6 +75,8 @@ cat << EOF > $INSTALLER
 #!/bin/bash
 
 OVERRIDE=\$1
+INSTALL_LOG=/tmp/fds_install.log
+echo "" > \$INSTALL_LOG
 echo ""
 echo "Installing FDS $FDSVERSION and Smokeview $SMVVERSION for $ostype2"
 echo ""
@@ -140,6 +141,7 @@ MKDIR()
           else
               read -p "Do you wish to overwrite it? (yes/no) " yn
           fi
+          echo \$yn >> \$INSTALL_LOG
           case \$yn in
               [Yy]* ) break;;
               [Nn]* ) echo "Installation cancelled";exit;;
@@ -187,7 +189,6 @@ THISDIR=\`pwd\`
 
 BASHRCFDS=/tmp/bashrc_fds.\$\$
 FDSMODULEtmp=/tmp/fds_module.\$\$
-SMVMODULEtmp=/tmp/smv_module.\$\$
 STARTUPtmp=/tmp/readme.\$\$
 
 #--- Find the beginning of the included FDS tar file so that it 
@@ -203,6 +204,7 @@ then
 else
   read  option
 fi
+echo \$option >> \$INSTALL_LOG
 
 if [ "\$option" == "extract" ]
 then
@@ -213,6 +215,7 @@ then
     while true; do
       echo "The file, \$THAT, already exists."
       read -p "Do you wish to overwrite it? (yes/no) " yn
+      echo \$yn >> \$INSTALL_LOG
       case \$yn in
         [Yy]* ) break;;
         [Nn]* ) echo "Extraction cancelled";exit;;
@@ -265,6 +268,7 @@ then
 else
   read answer
 fi
+echo \$answer >> \$INSTALL_LOG
 EOF
 
 if [ "$ostype" == "OSX" ]
@@ -317,6 +321,7 @@ cat << EOF >> $INSTALLER
    else
      read -p "Proceed? (yes/no) " yn
    fi
+   echo \$yn >> \$INSTALL_LOG
    case \$yn in
       [Yy]* ) break;;
       [Nn]* ) echo "Installation cancelled";exit;;
@@ -389,33 +394,6 @@ fi
 
 cp \$FDSMODULEtmp \$FDS_root/bin/modules/$FDSMODULE
 rm \$FDSMODULEtmp
-
-cat << MODULE > \$SMVMODULEtmp
-#%Module1.0#####################################################################
-###
-### SMV6 modulefile
-###
-
-proc ModulesHelp { } {
-        puts stderr "\tAdds Smokview bin location to your PATH environment variable"
-}
-
-module-whatis   "Loads smokeview paths and libraries."
-
-conflict FDS6
-conflict SMV6
-
-prepend-path    PATH            \$FDS_root/bin
-prepend-path    LD_LIBRARY_PATH \$FDS_root/bin/LIB64
-MODULE
-if [ "$ostype" == "LINUX" ] ; then
-cat << MODULE >> \$SMVMODULEtmp
-prepend-path    LD_LIBRARY_PATH /usr/lib64
-MODULE
-fi
-
-cp \$SMVMODULEtmp \$FDS_root/bin/modules/$SMVMODULE
-rm \$SMVMODULEtmp
 
 #--- create BASH startup file
 
