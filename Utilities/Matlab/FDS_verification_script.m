@@ -73,6 +73,7 @@ disp('water_ice_water...');               water_ice_water
 disp('pcm_slab...');                      pcm_slab
 disp('pulsating...');                     pulsating
 disp('compression_wave...');              compression_wave
+disp('soborot_mass_transport...');        soborot_mass_transport
 disp('plate_view_factor...');             plate_view_factor
 disp('terminal_velocity_convergence...'); terminal_velocity_convergence
 disp('fluid_part...');                    fluid_part
@@ -82,6 +83,7 @@ disp('mesh_transformation...');           mesh_transformation
 disp('synthetic_eddy_method...');         synthetic_eddy_method
 disp('shunn_mms_error...');               shunn_mms_error
 disp('shunn_cc_mms_error...');            shunn_cc_mms_error
+disp('rotcube_cc_mms_error...');          rotcube_cc_mms_error
 disp('openmp_timing_benchmarks...');      openmp_timing_benchmarks
 disp('rms_cov_corr...');                  rms_cov_corr
 disp('hot_layer_collapse...');            hot_layer_collapse

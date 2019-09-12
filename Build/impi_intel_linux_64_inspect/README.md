@@ -1,77 +1,45 @@
-# Intel Optimization Tools
-
-This folder contains a few configuration files that work with the Intel Trace Collector, Analyzer, and Inspector. These tools are designed to run under linux, and it is assumed that you have a means of opening X windows on your desktop computer.
-
-## Intel Trace Collector and Analyzer
-
-The Intel Trace Collector and Analyzer are two separate programs with a single purpose---to enable you to visualize the work flow of each MPI process of an FDS simulation. The Trace Collector is essentially built into the FDS executable via a compiler option (`-tcollect`), and it outputs a trace (`.stf`) file at the end of the FDS job. The Trace Analyzer is a visualization tool that reads the trace file and displays its contents graphically.
-
-For details on the Intel Trace Collector, read the [manual](https://software.intel.com/sites/default/files/intel-trace-collector-2018-user-and-reference-guide.pdf). For details on the Intel Trace Analyzer, read the [manual](https://software.intel.com/en-us/ita-user-and-reference-guide).
-
-The main consideration in tracing FDS is that the trace file can become enormous if you run a long job and trace each and every function and subroutine call. To prevent this, there is a configuration file called `fds_trace.conf` in this directory that contains a list of the main subroutines called in FDS. Only these subroutines are traced, keeping the trace file to a reasonable size and enabling you to more easily visualize the work flow. 
-
-To use the configuration file, add the `-c <filepath>/<configfilename>.conf` flag to qfds.sh. If using a custom script, add
-```
-export VT_CONFIG=<Full path to FDS repo>/Build/impi_intel_linux_64_inspect/fds_trace.conf
-```
-to your PBS script.
-
-Submit the job into whatever queue you want with
-```
-qsub -q whatever my_PBS_script
-```
-Make sure that the job only runs a handful of time steps, as there's no need to make the trace file bigger than it already is. The default trace file name is `fds_trace.stf`, and once the job is finished, start the Trace Analyzer:
-```
-traceanalyzer fds_trace.stf &
-```
-The most important graphic in the Trace Analyzer is the timeline. Get this from the `Charts` menu, `Event Timeline`. You will first see the entire timeline, but you can click and drag over shorter time intervals to see details. You will also notice that the first time you use the Trace Analyzer, everything is either colored red (MPI) or blue (Application). Go to the chart in the lower left corner and right click on the `Groups`, and choose to ungroup them. You should see the modules and subroutines you've chosen to trace. Keep ungrouping until you get down to the subroutine level. If you right-click again, you can choose to color the various routines, making it much easier to visualize. Your chosen color scheme will be saved in a file called `itarc` in your home directory.
-
-
-### Creating a new configuration file
-
-If you do not want to use the configuration file `fds_trace.conf` that is included above, you can create your own by following these steps.
-
-1. Compile a special version of FDS in `Build/impi_intel_linux_64_inspect`. This is essentially a debug compilation with the additional compiler option `-tcollect`. 
-
-2. Run a very short version of the FDS job that you want to trace. Just a few time steps is sufficient. You should not use a configuration file for this run. You want to collect everything.
-
-3. The trace (`.stf`) file that is created in the same directory as the FDS job output has a history of every function and subroutine call.
-
-4. To streamline the trace analysis, create a configuration file that reduces the number of subroutines and functions to trace. To do this, run the Configuration Assistant at the command line:
-```
-itcconfig <trace_file.stf>
-```
-
-5. A graphical window will pop up, called Trace Collector Configurator. Click on `Filters`, and then select the `Functions` tab in the center panel. Right click in the empty box beneath `Function Name Pattern`, select the functions and subroutines you want to trace. You might consider turning `Application` off on the first line, and then add back in those routines that you want to trace. The term `Application` means everything besides MPI calls. It is your application, i.e. FDS. 
-
-6. Save the configuration (`.conf`) file and exit the Configurator.
-
-6. Add `export VT_CONFIG=<configuration_file.conf>` to your run script, created with `qfds.sh`.
-
-7. Run your FDS job again, looking for the new trace (`.stf`) file.
-
-8. Run the Intel Trace Analyzer:
-```
-traceanalyzer <trace_file.stf>
-```
-
 ## Intel Inspector
 
-The [Intel Inspector](https://software.intel.com/en-us/node/622387) can help detect improperly coded OpenMP directives.
+This folder contains a few configuration files that work with the [Intel Inspector](https://software.intel.com/en-us/node/622387), a tool that can help detect improperly coded OpenMP directives.
 
-1. Compile the `inspect` version of FDS using the script `make_fds.sh` in this directory. The relevant compiler options are listed [here](https://software.intel.com/en-us/inspector-user-guide-linux-building-applications).
-2. Launch the graphical user interface (GUI) using this command
-   ```
-   inspxe-gui
-   ```
-3. Create and configure the project through Inspector. If trying to inspect fds, use `qfds.sh` with the `-v` (verbose) flag in order to see which settings will be need to be configured in Inspector.
+### Required Setup
 
+1. Run the setup script `inspxe-vars.sh` that is located in the installation folder for the Intel compiler. For example:
+```
+source /opt/intel19/inspector_2019/inspxe-vars.sh
+```
+2. Compile a specially instrumented FDS executable using the script `make_fds.sh` in this directory. The relevant compiler options are listed [here](https://software.intel.com/en-us/inspector-user-guide-linux-building-applications). Consult the `makefile` to see what options are used for FDS.
 
-## Intel Cluster Checker
+3. For threading error analysis, you must use at least 2 OpenMP threads.
 
-The Intel Cluster Checker is a diagnostic tool that checks the overall health of your compute cluster. To use it, first consult the [User's Guide](https://software.intel.com/en-us/cluster-checker-user-guide-2019-beta). In brief, do the following:
+### Collection Procedure
 
-   1. Install Intel Cluster Checker and run `source /opt/intel19/clck/2019b/bin/clckvars.sh`. Your path might be slightly different.
-   2. Create a `nodefile`, which is just a text file with a list of the cluster node names, one per line.
-   3. Run `clck -f nodefile`
+Intel Inspector can be run from the command line or via a graphical user interface (GUI). To invoke the GUI, first add X11 forwarding to your PuTTY (or equivalent) session if logging into a remote linux cluster. Then type `inspxe-gui` to open the GUI. Inside the GUI, use the new project option to create a project for FDS, selecting `fds_impi_intel_linux_64_inspect` as the target, the current directory for binary files, and `firemodels/fds/Source` for source files. To use the project, place collection results, obtained later, into the generated project folder.
+
+To run Inspector from the command line, type the following:
+```
+mpiexec -np 1 inspxe-cl -collect ti2 -- $HOME/firemodels/fds/Build/impi_intel_linux_64_inspect/fds_impi_intel_linux_64_inspect simple_test.fds
+```
+The analysis-type, `ti2`, generates a reasonably balanced analysis for threading errors, identifying more errors than `ti1` in less time than `ti3`. If you need to use another analysis type, you can read more [here](https://software.intel.com/en-us/inspector-user-guide-linux-threading-error-analysis-types). 
+
+The one option we use is `-knob stack-depth=32`. This ensures that, regardless of how many calls are made by a function, even deep errors can be found. You can find more options [here](https://software.intel.com/en-us/inspector-user-guide-linux-inspxe-cl-actions-options-and-arguments).
+
+Rather than issuing the `mpiexec` call at the command line, you can invoke `qfds.sh -x [result_directory] ...` which will run a `ti2` analysis with a stack depth of 32, automatically. The script `inspection.sh [case_name.fds]` in `fds/Verification/Thread_Check` is another automated script which reports successes and failures to stdout. You can run this script in the background by adding &, and redirect the output to a file. 
+
+### Analysis Procedure using the Command Line option
+
+To analyze the results using command line formm of Inspector, type:
+```
+inspxe-cl -report <report_type> -r <result_dir>
+```
+This will display results according to `report_type` to standard out. `problems` is a suitable `report_type`, but you can find them all [here](https://software.intel.com/en-us/inspector-user-guide-linux-report).
+
+Alternatively, `fds/Verification/Thread_Check` contains a script called `inspect_report.sh`. This script can handle the multiple files generated in any Inspector run with more than one process.
+```
+./inspect_report.sh -n <directory_prefix>
+```
+
+### Analysis Procedure using the Graphical User Interface
+
+Alternatively, you can open the GUI via `inspxe-gui`. It can be run directly on a `inspxe` file, or, if a project was created, the result directories can be generated/placed in the project's folder, and viewed by clicking the names of the results on the left.
 

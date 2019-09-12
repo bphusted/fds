@@ -74,6 +74,11 @@ fi
 # ---------------------------- usage ----------------------------------
 
 function usage {
+  if [ "$use_intel_mpi" == "1" ]; then
+    MPI=impi
+  else
+    MPI=mpi
+  fi
   echo "Usage: qfds.sh [-p n_mpi_processes] [-o nthreads] [-e fds_command] [-q queue]  casename.fds"
   echo ""
   echo "qfds.sh runs FDS using an executable from the repository or one specified with the -e option."
@@ -84,8 +89,8 @@ function usage {
   echo "then the currently loaded modules are used."
   echo ""
   echo " -e exe - full path of FDS used to run case "
-  echo "    [default: $FDSROOT/fds/Build/mpi_intel_${platform}_64$DB/fds_mpi_intel_${platform}_64$DB]"
-  echo " -h   - show commony used options"
+  echo "    [default: $FDSROOT/fds/Build/${MPI}_intel_${platform}_64$DB/fds_${MPI}_intel_${platform}_64$DB]"
+  echo " -h   - show commonly used options"
   echo " -H   - show all options"
   echo " -o o - number of OpenMP threads per process [default: 1]"
   echo " -p p - number of MPI processes [default: 1] "
@@ -99,6 +104,7 @@ function usage {
   echo " -c file - loads Intel Trace Collector configuration file "
   echo " -C   - use modules currently loaded rather than modules loaded when fds was built."
   echo " -d dir - specify directory where the case is found [default: .]"
+  echo " -D n - delay the case submission by n seconds"
   echo " -E - use tcp transport (only available with the Intel compiled versions of fds)"
   echo "      This options adds export I_MPI_FABRICS=shm:tcp to the run script"
   echo " -f repository root - name and location of repository where FDS is located"
@@ -114,6 +120,7 @@ function usage {
   echo " -s   - stop job"
   echo " -S   - use startup files to set the environment, do not load modules"
   echo " -r   - append trace flag to the mpiexec call generated"
+  echo " -R   - select resource manager. Currently only responds to input 'SLURM', with default TORQUE, but allows for future expansion"
   echo " -t   - used for timing studies, run a job alone on a node (reserving $NCORES_COMPUTENODE cores)"
   echo " -T type - run dv (development), db (debug), inspect, advise, or vtune version of fds"
   echo "           if -T is not specified then the release version of fds is used"
@@ -130,6 +137,7 @@ CURDIR=`pwd`
 cd $QFDS_PATH
 QFDS_DIR=`pwd`
 cd $CURDIR
+SLEEP=
 
 #*** define toplevel of the repos
 
@@ -140,16 +148,7 @@ fi
 
 #*** define resource manager that is used
 
-if [ "$RESOURCE_MANAGER" == "SLURM" ]; then
-  if [ "$SLURM_MEM" != "" ]; then
-    SLURM_MEM="#SBATCH --mem=$SLURM_MEM"
-  fi
-  if [ "$SLURM_MEMPERCPU" != "" ]; then
-    SLURM_MEM="#SBATCH --mem-per-cpu=$SLURM_MEMPERCPU"
-  fi
-else
-  RESOURCE_MANAGER="TORQUE"
-fi
+
 
 #*** determine platform
 
@@ -206,7 +205,12 @@ use_inspect=
 use_advise=
 use_vtune=
 use_intel_mpi=1
+iinspectresdir=
+iinspectargs=
+vtuneresdir=
+vtuneargs=
 use_config=""
+RESOURCE_MANAGER="TORQUE"
 # the mac doesn't have Intel MPI
 if [ "`uname`" == "Darwin" ]; then
   use_intel_mpi=
@@ -238,11 +242,15 @@ commandline=`echo $* | sed 's/-V//' | sed 's/-v//'`
 
 #*** read in parameters from command line
 
-while getopts 'Ac:Cd:e:Ef:hHiILm:MNn:o:O:p:Pq:rsStT:vVw:' OPTION
+while getopts 'Aa:c:Cd:D:e:Ef:hHiILm:Mn:o:O:p:Pq:R:rsStT:vVw:x:' OPTION
 do
 case $OPTION  in
   A) # used by timing scripts to identify benchmark cases
    DUMMY=1
+   ;;
+  a)
+   vtuneresdir="$OPTARG"
+   use_vtune=1
    ;;
   c)
    use_config="$OPTARG"
@@ -252,6 +260,9 @@ case $OPTION  in
    ;;
   d)
    dir="$OPTARG"
+   ;;
+  D)
+   SLEEP="sleep $OPTARG"
    ;;
   e)
    exe="$OPTARG"
@@ -321,6 +332,17 @@ case $OPTION  in
   r)
    trace="-trace"
    ;;
+  R)
+   RESOURCE_MANAGER="$OPTARG"
+   if [ "$RESOURCE_MANAGER" == "SLURM" ]; then
+     if [ "$SLURM_MEM" != "" ]; then
+      SLURM_MEM="#SBATCH --mem=$SLURM_MEM"
+     fi
+     if [ "$SLURM_MEMPERCPU" != "" ]; then
+      SLURM_MEM="#SBATCH --mem-per-cpu=$SLURM_MEMPERCPU"
+     fi
+   fi
+   ;;
   s)
    stopjob=1
    ;;
@@ -362,6 +384,11 @@ case $OPTION  in
   w)
    walltime="$OPTARG"
    ;;
+  x)
+  iinspectresdir="$OPTARG"
+   use_inspect=1
+   ;;
+   
 esac
 done
 shift $(($OPTIND-1))
@@ -433,12 +460,18 @@ else
   fi
   if [ "$use_inspect" == "1" ]; then
     DB=_inspect
+    if [ "$iinspectresdir" != "" ]; then
+    iinspectargs="inspxe-cl -collect ti2 -knob stack-depth=32 -s-f $FDSROOT/fds/Build/impi_intel_linux_64_inspect/suppressions/default.sup  -result-dir $iinspectresdir --"
+    fi
   fi
   if [ "$use_advise" == "1" ]; then
     DB=_advise
   fi
   if [ "$use_vtune" == "1" ]; then
     DB=_vtune
+    if [ "$vtuneresdir" != "" ]; then
+    vtuneargs="amplxe-cl -collect hpc-performance -result-dir $vtuneresdir --"
+    fi
   fi
   if [ "$use_intel_mpi" == "1" ]; then
     if [ "$exe" == "" ]; then
@@ -681,7 +714,7 @@ else
 
   if [ "$RESOURCE_MANAGER" == "SLURM" ]; then
     QSUB="sbatch -p $queue --ignore-pbs"
-    MPIRUN='srun'
+    MPIRUN='mpiexec'
   fi
 fi
 
@@ -756,6 +789,19 @@ export OMP_NUM_THREADS=$n_openmp_threads
 EOF
 fi
 
+if [ "$use_vtune" == "1" ]; then
+cat << EOF >> $scriptfile
+source /opt/intel19/vtune_amplifier_2019/amplxe-vars.sh quiet
+EOF
+fi
+
+if [ "$use_inspect" == "1" ]; then
+cat << EOF >> $scriptfile
+source /opt/intel19/inspector_2019/inspxe-vars.sh quiet
+EOF
+fi
+
+
 if [ "$use_intel_mpi" == "1" ]; then
 cat << EOF >> $scriptfile
 export I_MPI_DEBUG=5
@@ -805,16 +851,44 @@ echo "     Directory: \`pwd\`"
 echo "          Host: \`hostname\`"
 EOF
 if [ "$OPENMPCASES" == "" ]; then
+if [ "$vtuneresdir" == "" ]; then
+if [ "$iinspectresdir" == "" ]; then
 cat << EOF >> $scriptfile
 $MPIRUN $exe $in $OUT2ERROR
 EOF
 else
+cat << EOF >> $scriptfile
+$MPIRUN $iinspectargs $exe $in $OUT2ERROR
+EOF
+fi
+else
+cat << EOF >> $scriptfile
+$MPIRUN $vtuneargs $exe $in $OUT2ERROR
+EOF
+fi
+else
 for i in `seq 1 $OPENMPCASES`; do
+if [ "$vtuneresdir" == "" ]; then
+if [ "$iinspectresdir" == "" ]; then
 cat << EOF >> $scriptfile
 
 export OMP_NUM_THREADS=${nthreads[$i]}
 $MPIRUN $exe ${files[$i]} $OUT2ERROR
 EOF
+else
+cat << EOF >> $scriptfile
+
+export OMP_NUM_THREADS=${nthreads[$i]}
+$MPIRUN $iinspectargs $exe ${files[$i]} $OUT2ERROR
+EOF
+fi
+else
+cat << EOF >> $scriptfile
+
+export OMP_NUM_THREADS=${nthreads[$i]}
+$MPIRUN $vtuneargs $exe ${files[$i]} $OUT2ERROR
+EOF
+fi
 done
 fi
 if [ "$queue" == "none" ]; then
@@ -884,6 +958,7 @@ chmod +x $scriptfile
 if [ "$SCRIPTFILES" != "" ]; then
   echo $(basename "$scriptfile") >> $SCRIPTFILES
 fi
+$SLEEP
 $QSUB $scriptfile
 if [ "$queue" != "none" ]; then
   cat $scriptfile > $scriptlog

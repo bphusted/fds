@@ -1,7 +1,7 @@
 #!/bin/bash
 
-export FIREBOTROOT=/home2/smokevis2/firebot/FireModels_central/fds/ # blaze firebot
-#FIREBOTROOT=/home4/firebot/FireModels_central/fds/ # burn firebot
+export FIREBOTROOT=/home2/smokevis2/firebot/FireModels_clone/fds/ # blaze firebot
+#FIREBOTROOT=/home4/firebot/FireModels_clone/fds/ # burn firebot
 export FIREBOTMANS=$FIREBOTROOT/Manuals/
 export FIREBOTVER=$FIREBOTROOT/Verification/
 export FIREBOTVAL=$FIREBOTROOT/Validation/
@@ -37,6 +37,6 @@ echo Validation Guide Figures Copied
 #echo Verification Results Copied
 
 # Copy Validation Results
-#rsync -v -r --include '*/' --include 'FDS_Output_Files/*_git.txt' --include 'FDS_Output_Files/*.csv' --exclude '*' $FIREBOTVAL/* $BASEDIR/../Validation/
+#rsync -v -r --include '*/' --include '*_git.txt' --include '*.csv' --exclude '*' $FIREBOTVAL/* $BASEDIR/../Validation/
 #echo Validation Results Copied
 

@@ -28,6 +28,14 @@ The fire source was a natural gas diffusion burner.  The burner surface was hori
 \label{ATF Drawing}
 \end{figure}
 
+
+\section{Atmospheric Dispersion Correlations}
+\label{Atmospheric_Dispersion_Description}
+
+A common exercise in atmospheric dispersion modeling is predicting the plume rise height of stack emissions. Stull~\cite{Stull:2000} presents an empirical correlation for plume rise height from a smoke stack in a stable atmospheric boundary layer. Details of the correlation and simulation are found in Section~\ref{Plume_Height_Discussion}.
+
+
+
 \section{Backward Facing Step}
 \label{Backward_Facing_Step_Description}
 
@@ -238,7 +246,9 @@ In July and August of 1986, the Commonwealth Scientific and Industrial Research 
 
 \subsubsection{Modeling Notes}
 
-Two of these experiments were simulated with FDS by Mell~et~al.~\cite{Mell:IJWF2007}. Measured properties for the specific types of grasses burned in the two experiments are listed in Table~\ref{Properties_Grasses}. Properties that were not measured are listed in Table~\ref{Assumed_Properties_Grasses}. These assumed properties are typically for wood or cellulosic fuels. The moisture is modeled as water. The grass is assumed to be composed primarily of cellulose.
+Two of these experiments are simulated with FDS by Mell~et~al.~\cite{Mell:IJWF2007}. The grass is modeled as a collection of cylindrical Lagrangian particles. The pyrolysis model assigned to the particles is described in the FDS User's Guide~\cite{FDS_Users_Guide}, chapter ``Earth, Wind and Fire,'' section ``Thermal Degradation Model for Vegetation.''
+
+Measured properties for the specific types of grasses burned in the two experiments are listed in Table~\ref{Properties_Grasses}. Properties that were not measured are listed in Table~\ref{Assumed_Properties_Grasses}. These assumed properties are typically for wood or cellulosic fuels. The moisture is modeled as water. The grass is assumed to be composed primarily of cellulose.
 
 \begin{figure}[ht]
 \includegraphics[width=\textwidth]{FIGURES/CSIRO_Grassland_Fires/Case_F19_0358.png}
@@ -433,7 +443,13 @@ The FDS model of the facility makes use of the screen drag model for Lagrangian 
 \section{FM Parallel Panel Experiments}
 \label{FM_Parallel_Panel_Description}
 
-Patricia Beaulieu of Worcester Polytechnic Institute made heat flux measurements within a set of vertical parallel panels as part of a cooperative research program between Worcester Polytechnic Institute and FM Global (Factory Mutual)~\cite{Beaulieu:FM}. The experimental apparatus consisted of two vertical parallel panels, 2.4~m high and 0.6~m wide, with a sand burner at the base. The objective of the project was to measure the flame spread rate over various composite wall lining materials, but there were also experiments conducted with inert walls for the purpose of measuring the heat flux from fires fueled by propane and propylene at heat release rates of 30~kW, 60~kW, and 100~kW.
+Patricia Beaulieu of Worcester Polytechnic Institute made heat flux measurements within a set of vertical parallel panels as part of a cooperative research program between Worcester Polytechnic Institute and FM Global (Factory Mutual)~\cite{Beaulieu:FM}. The experimental apparatus consisted of two vertical parallel panels, 2.4~m high and 0.6~m wide, with a sand burner at the base. The objective of the project was to measure the flame spread rate over various composite wall lining materials, but there were also experiments conducted with inert walls for the purpose of measuring the heat flux from fires fueled by propane and propylene at heat release rates of 30~kW, 60~kW, and 100~kW. A sketch of the apparatus is shown in Fig.~\ref{Parallel_Panel_Sketch}.
+
+\begin{figure}[!ht]
+\includegraphics[width=\textwidth]{FIGURES/FM_Parallel_Panel/Full_Assembly}
+\caption[Sketch of the FM parallel panel apparatus]{Sketch of the FM parallel panel apparatus.}
+\label{Parallel_Panel_Sketch}
+\end{figure}
 
 
 
@@ -769,10 +785,111 @@ Following is additional information provided by the test director, Richard Peaco
 \end{figure}
 
 
+\section{NIST Composite Beam Experiments}
+\label{NIST_Composite_Beam_Description}
+
+A set of experiments was conducted in the Large Fire Laboratory at NIST to study the behavior of long-span steel-concrete composite floor beams designed and constructed following U.S. building codes and standards~\cite{Ramesh:TNXXXX}. The composite beam consisted of a 12.8~m long W18$\times$35 steel beam and an 16~cm thick lightweight concrete slab cast on top of 7.6~cm deep ribbed steel decking. Drawings of the compartment are shown in Figs.~\ref{NIST_Composite_Beam_Drawing_1} through \ref{NIST_Composite_Beam_Drawing_3}.
+
+Simultaneous mechanical and fire loading was applied to the specimens. The measurements focused on evaluation of the characteristics of the fire loading, temperatures, and structural responses of the specimens to fires.
+
+\subsubsection{Modeling Notes}
+
+The simulations of the NIST Composite Beam experiments are performed with 5~cm grid cells and 32 meshes. The calculations are sped up by a factor of 10 using {\ct TIME\_SHRINK\_FACTOR=10}, whereby a 60~min experiment is simulated in 6~min of real time because the heat release rate is held steady for most of the experiment. The specific heats of all solid materials are reduced by a factor of 10 automatically to account for the change in time scale.
+
+Because these experiments involve a global equivalence ratio of approximately 1, the two-step simple chemistry model is used, where soot and CO are produced when the fire becomes under-ventilated.
+
+\begin{sidewaysfigure}[p]
+\includegraphics[width=\textwidth]{FIGURES/NIST_Composite_Beam/NFRL_CompositeBeamTest_CompartmentWallLayout_1}
+\caption[Elevation view of NIST Composite Beam experiments]{Elevation view of NIST Composite Beam experiments.}
+\label{NIST_Composite_Beam_Drawing_1}
+\end{sidewaysfigure}
+
+\begin{sidewaysfigure}[p]
+\includegraphics[width=\textwidth]{FIGURES/NIST_Composite_Beam/NFRL_CompositeBeamTest_CompartmentWallLayout_2}
+\caption[Plan view of NIST Composite Beam experiments]{Plan view of NIST Composite Beam experiments.}
+\label{NIST_Composite_Beam_Drawing_2}
+\end{sidewaysfigure}
+
+\begin{sidewaysfigure}[p]
+\includegraphics[width=\textwidth]{FIGURES/NIST_Composite_Beam/NFRL_CompositeBeamTest_CompartmentWallLayout_3}
+\caption[Side view of NIST Composite Beam experiments]{Side view of NIST Composite Beam experiments.}
+\label{NIST_Composite_Beam_Drawing_3}
+\end{sidewaysfigure}
+
+\section{NIST E119 Compartment Experiments}
+\label{NIST_E119_Compartment_Description}
+
+In December 2018, three fire experiments were conducted in a compartment approximately 10.8~m wide, 7.0~m deep and 3.8~m high, constructed in the Large Fire Laboratory of NIST~\cite{Ana:TNXXXX}. The experiments were designed to test different types of floor assemblies. Two experiments, designed as replicates, lasted 15~min, and the third lasted 75~min. Four natural gas burners generated a peak heat release rate of approximately 10~MW in the 75~min experiments. The measured average upper layer gas temperature was comparable with that prescribed in the ASTM~E119 standard~\cite{E119}. Drawings of the compartment are shown in Figs.~\ref{NIST_E119_Compartment_Drawing_1} through~\ref{NIST_E119_Compartment_Drawing_3}.
+
+\begin{sidewaysfigure}[p]
+\includegraphics[width=0.65\textwidth, angle =90]{FIGURES/NIST_E119_Compartment/NIST_E119_Compartment_TCTrees}
+\caption[Plan view of NIST E119 Compartment experiment]{Plan view of NIST E119 Compartment experiment.}
+\label{NIST_E119_Compartment_Drawing_1}
+\end{sidewaysfigure}
+
+\begin{sidewaysfigure}[p]
+\includegraphics[width=\textwidth]{FIGURES/NIST_E119_Compartment/NIST_E119_Compartment_SWall}
+\caption[Elevation view of NIST E119 Compartment experiment]{Elevation view of NIST E119 Compartment experiment.}
+\label{NIST_E119_Compartment_Drawing_2}
+\end{sidewaysfigure}
+
+\begin{sidewaysfigure}[p]
+\includegraphics[width=\textwidth]{FIGURES/NIST_E119_Compartment/NIST_E119_Compartment_NWall}
+\caption[Elevation view of NIST E119 Compartment experiment]{Elevation view of NIST E119 Compartment experiment.}
+\label{NIST_E119_Compartment_Drawing_3}
+\end{sidewaysfigure}
+
+\FloatBarrier
+
 \section{NIST Douglas Firs}
 \label{NIST_Douglas_Firs_Description}
 
 In 2009, Mell et~al. measured the burning rate of individual Douglas fir trees of various sizes and moisture contents~\cite{Mell:2009}. Nine of the trees were approximately 2~m tall, and three were approximately 5~m tall. The results were presented as averages: the three 5~m trees had an average moisture content of 26~\%, three of the 2~m trees had an average moisture content of 49~\%, and the remaining six 2~m trees had a moisture content of 14~\%. The 2~m trees were ignited with a natural gas ring burner with a diameter of 80~cm and a heat release rate of 30~kW. The trees with a moisture content of 14~\% were exposed to the burner for 10~s and the 49~\% trees were exposed for 30~s. The 5~m trees were exposed to a hexagonal burner with a span of 122~cm and HRR of 130~kW for 30~s.
+
+\subsubsection{Modeling Notes}
+
+The trees are modeled as a collection of cylindrical Lagrangian particles. Mell~et~al.~\cite{Mell:2009} group the particles into three size classes. The pyrolysis model assigned to the particles is described in the FDS User's Guide~\cite{FDS_Users_Guide}, chapter ``Earth, Wind and Fire,'' section ``Thermal Degradation Model for Vegetation.'' 
+
+Measured properties of the trees are listed in Table~\ref{Properties_Trees}. Generic vegetation properties are listed in Table~\ref{Assumed_Properties_Trees}. These assumed properties are typically for wood or cellulosic fuels. The moisture is modeled as water. The vegetation is assumed to be composed primarily of cellulose. Reference~\cite{Mell:2009} provides an estimate of the distribution of mass for the foliage, roundwood less than 3~mm in diameter, roundwood 3~mm to 6~mm, and roundwood 6~mm to 10~mm. For the 2~m trees, the distribution is approximately 64~\%, 11~\%, 10~\%, and 15~\%, respectively. For the 5~m trees, it is 60~\%, 17~\%, 12~\%, and 11~\%, respectively.
+
+\begin{table}[ht]
+\begin{center}
+\caption[Measured properties for the NIST Douglas fir trees]{Measured properties for the NIST Douglas fir trees~\cite{Mell:2009}.}
+\label{Properties_Trees}
+\begin{tabular}{|l|c|c|c|c|}
+\hline
+Property                                & Units         & Case 1        & Case 2        & Case 3     \\ \hline \hline
+Replicate Experiments                   & --            & 6             & 3             & 3          \\ \hline
+Avg.~Crown Height                       & m             & 1.9           & 1.9           & 4.2        \\ \hline
+Avg.~Base Height                        & m             & 0.15          & 0.15          & 0.3        \\ \hline
+Avg.~Base Width                         & m             & 1.7           & 1.7           & 2.9        \\ \hline
+Foliage Surface Area to Volume Ratio    & m$^{-1}$      & 3940          & 3940          & 3940       \\ \hline
+Avg.~Initial Mass                       & kg            & 9.7           & 13.5          & 57.9       \\ \hline
+Avg.~Moisture Fraction                  & \%            & 14            & 49            & 26         \\ \hline
+Assumed Bulk Mass per Unit Volume       & kg/m$^3$      & 3.2           & 4.6           & 2.7        \\ \hline
+\end{tabular}
+\end{center}
+\end{table}
+
+\begin{table}
+\begin{center}
+\caption[Assumed properties for the vegetation]{Assumed properties for the vegetation. Note that the Pyrolysis Temperature is taken to be the temperature at which the mass loss rate peaks in the TGA experiments of Morvan and Dupuy~\cite{Morvan:CF2004}.}
+\label{Assumed_Properties_Trees}
+\begin{tabular}{|l|c|c|c|}
+\hline
+Property                        & Units                 & Value                     & Reference                             \\ \hline \hline
+Chemical Composition            & --                    & C$_6$H$_{10}$O$_5$        & Assumption, Cellulose                 \\ \hline
+Heat of Combustion              & kJ/kg                 & 17700                     & \cite{Susott:FS1982}                  \\ \hline
+Soot Yield                      & kg/kg                 & 0.015                     & \cite{SFPE:Tewarson}                  \\ \hline
+Char Yield                      & kg/kg                 & 0.26                      & \cite{Susott:FS1982}                  \\ \hline
+Specific Heat                   & kJ/(kg$\cdot$K)       & 1.2                       & Various sources                       \\ \hline
+Conductivity                    & W/(m$\cdot$K)         & 2                         & Assumption                            \\ \hline
+Density                         & kg/m$^3$              & 514                       & \cite{Rothermel:1972}                 \\ \hline
+Heat of Pyrolysis               & kJ/kg                 & 418                       & \cite{Morvan:CF2004}                  \\ \hline
+Pyrolyis Temperature            & $^\circ$C             & 200                       & \cite{Morvan:CF2004}                  \\ \hline
+\end{tabular}
+\end{center}
+\end{table}
 
 
 \section{NIST Enclosure Experiments}
@@ -952,7 +1069,7 @@ All of the fires were fueled by one or more 30.5~cm (1~ft) square natural gas bu
 
 \subsection{Wall and Corner Effects}
 
-Six large compartment experiments were conducted in July, 2017, where four natural gas burners were positioned (1) in a corner and (2) against a wall, and then moved outward in stages until the corner or wall effect became negligible. The quad burner was 60~cm by 60~cm and the burner surface was 54~cm above the floor. The corner fire was located in the southwest corner of the large compartment. The wall fire was centered on the south (long) wall.
+Six large compartment experiments~\cite{McGrattan:TN1984} were conducted in July, 2017, where four natural gas burners were positioned (1) in a corner and (2) against a wall, and then moved outward in stages until the corner or wall effect became negligible. The quad burner was 60~cm by 60~cm and the burner surface was 54~cm above the floor. The corner fire was located in the southwest corner of the large compartment. The wall fire was centered on the south (long) wall.
 
 The experiments began with the quad burner in the corner or against the wall for the first 30~min. At 30~min, the burner was moved so that its edge(s) was 10~cm away from the wall(s). It remained for 15~min, after which it was moved to 20~cm, 30~cm, 50~cm, 100~cm, and 160~cm, each time remaining 15~min for a total experiment time of 2~h.
 
@@ -1084,10 +1201,53 @@ Test   & Cabinet    & Front Door & Top Vents        & Upper Side Vents          
 \end{table}
 
 
-
-
-
 \FloatBarrier
+
+\section{NIST/NRC Parallel Panel Experiments}
+\label{NIST_NRC_Parallel_Panels_Description}
+
+As part of a Nuclear Regulatory Commission (NRC) research project to assess fire behavior in electrical enclosures, rate of spread and heat release rate measurements were made on various plastics lining a parallel panel apparatus. The panels were 0.6~m (2~ft) wide, 2.4~m (8~ft) tall, and separated by 0.3~m (1~ft). A 60~kW propane sand burner was positioned at the base of the two panels. Plastics tested to date include PMMA, PVC, and PBT, cut into 6.4~mm (0.25~in) thick panels. A sketch of the apparatus, originally developed by Factory Mutual, is shown in Fig.~\ref{Parallel_Panel_Sketch}.
+
+
+
+\section{NIST Pool Fire Experiments}
+\label{NIST_Pool_Fires_Description}
+
+The NIST Pool Fire Experiments include temperature, species concentration, and heat flux measurements of 30~cm and 100~cm diameter circular liquid fuel fires.
+
+The 30~cm burner is 15~cm deep and has a wall thickness of 1.6~mm. The burner is fitted with legs such that the burner rim is positioned 30~cm above the floor. The bottom of the burner is maintained at a constant temperature by flowing tap water (nominally 20~$^\circ$C) through a 3~cm section on the bottom of the fuel pan. The dimensions of the circular burner are similar to Weckman's methanol experiment described in Section~\ref{Waterloo_Methanol_Description}.
+
+The 100~cm burner is also 15~cm deep, has a wall thickness of 1.6~mm, and is water-cooled.
+
+\subsubsection{Temperature Measurements}
+
+Hamins and Lock~\cite{Hamins:TN1928} made mean and rms centerline and radial gas temperature measurements for a 30~cm methanol pool fire. The radial measurements were made at heights of 3, 30, 40, 50, and 60~cm.
+
+Sung et al.~\cite{Sung:TN2019} made mean and rms centerline and radial gas temperature measurements for a 100~cm methanol pool fire. The radial measurements were made at heights of 20, 60, 100, 140, and 180~cm.
+
+\subsubsection{Gas Species Measurements}
+
+Falkenstein-Smith et al. measured the time-averaged centerline species concentrations within the flaming region of three liquid fuel fires---acetone, ethanol, and methanol~\cite{Falkenstein-Smith:2019}. The measurements were made using a gas chromatograph/mass spectrometer system (GC/MSD). The volume fraction of each species was calculated via the number of moles identified by the GC/MSD at each centerline point. Soot mass fractions were measured during the gas sampling process.
+
+\subsubsection{Heat Flux Measurements}
+
+Radiative and total heat flux measurements were made at various locations for the 30~cm and 100~cm methanol pool fires.
+\begin{itemize}
+\item Kim et al.~\cite{Kim:FSJ2019} made total heat flux measurements along a radial profile extending 1.5~m outwards from the center of the 30~cm methanol fire.
+\item Hamins et al.~\cite{Hamins:CST1994} made radiative heat flux measurements along a radial profile extending from the pool center to the outer rim of the 30~cm methanol fire.
+\item Klassen et al.~\cite{Klassen:GCR1994} and Kim et al.~\cite{Kim:FSJ2019} made radiative heat flux measurements along a radial profile extending outwards from the outer rim of the 30~cm methanol fire.
+\item Kim et al.~\cite{Kim:FSJ2019} made total heat flux measurements along a vertical profile 60~cm from the center of the 30~cm methanol fire.
+\item Sung et al.~\cite{Sung:TN2019} made total heat flux measurements along a radial profile extending from outer rim to 2~m, and at various heights and distances from center of the 100~cm methanol fire.
+\end{itemize}
+
+\subsubsection{Modeling Notes}
+
+The 30~cm pool fires are modeled at three different grid resolutions---2~cm, 1~cm, and 0.5~cm. The 100~cm pool fires are modeled at 4~cm, 2~cm, and 1~cm resolution. The mass loss rate of the fuel is specified.
+
+A two-step reaction mechanism is implemented. In the first reaction, fuel is converted to CO, soot, H$_2$, and H$_2$O. In the second reaction, the CO, soot, and H$_2$ are converted to CO$_2$ and H$_2$O. Both reactions employ fast kinetics, but proceed in series, not in parallel. The relative amounts of CO, soot, and H$_2$ produced in the first step are still subjects of study, and for the moment have been estimated based on measured results. For example, the methanol fire produces no measurable soot and thus all of the carbon in the fuel molecule is assumed to produce CO in the first step.
+
+The radiative fraction is not specified, but rather predicted using the computed temperature and radiative properties computed by RadCal.
+
 
 \section{NIST Smoke Alarm Experiments}
 \label{NIST_Smoke_Alarm_Description}
@@ -1465,6 +1625,14 @@ Test    & Width     & Height        & $\dot{Q}$  & Location     & Test  & Width 
 \FloatBarrier
 
 
+\section{SWJTU Tunnel Experiments}
+\label{SSJTU_Tunnel_Description}
+
+Fires fueled by methanol and propane ranging from 5.6~kW to 16.8~kW were conducted in a 1:20 reduced-scale tunnel at Southwest Jiaotong University, Chengdu, China~\cite{Wang:TUST2019}. The tunnel was 0.45~m wide, 0.23~m high and 20.8~m long. The burner was located at the center of the tunnel and both ends were open. Temperatures and gas concentrations (i.e., O$_2$, CO and CO$_2$) were measured. The results showed that both methanol and propane fires self-extinguished in the 20.8~m long tunnel within approximately 10~min, except for the 5.6~kW methanol fire. The larger the heat release rate, the faster the self-extinction of the fire. The oxygen concentrations in the 20.8~m long tunnel decreased to approximately 12~\% except for the 5.6~kW methanol fire, which remained well above the limiting oxygen concentration.  Self-extinction was not observed for fires of the same heat release rates in a 10~m long tunnel of the same cross section. The oxygen concentrations in the 10~m long tunnel decreased to approximately 17~\%.  In the long tunnel with large fire sizes, the smoke layer descended to the floor, inhibiting the supply of fresh air reaching the fire.
+
+
+
+
 \section{UL/NIST Vent Experiments}
 \label{UL_NIST_Vents_Description}
 
@@ -1791,12 +1959,126 @@ II-12 & C  & All Open at Start       & 23 & 0:58 & 4:55 & 119.0 &246.2 \\ \hline
 \FloatBarrier
 
 
-\section{UL/NIJ Houses}
+\section{UL/NIJ House Experiments}
 \label{UL_NIJ_Description}
 
-The Firefighter Safety Research Institute (FSRI) of Underwriters Laboratory (UL), with support from the National Institute of Justice (NIJ), conducted fire experiments in a one-story ranch-style house and a two-story colonial-style house in the large fire facility at Northbrook, Illinois, in 2016 and 2017. The goal of the experiments was to determine the effect of ventilation on fire patterns in fully-furnished homes. As part of the project, a natural gas burner was positioned within the unfurnished structures to evaluate changes in flow patterns as various doors and windows were opened and closed. The analysis of this data is still underway, but some results for the one-story house are included.
+The Firefighter Safety Research Institute (FSRI) of Underwriters Laboratory (UL), with support from the National Institute of Justice (NIJ), conducted fire experiments in a one-story ranch-style house and a two-story colonial-style house in the large fire facility at Northbrook, Illinois, in 2016 and 2017~\cite{Madrzykowski:2019}. The goal of the experiments was to determine the effect of ventilation on fire patterns in fully-furnished homes. As part of the project, a natural gas burner was positioned within the unfurnished structures to evaluate changes in flow patterns as various doors and windows were opened and closed. The test structures were instrumented with thermocouple trees, pressure transducers, and bi-directional probes. The floor plan for the single story ranch-style house is included in Fig.~\ref{Ranch_layout}, and plans for the two story colonial-style house in Fig.~\ref{Colonial_layout}. The ceiling was 2.4~m above the floor in the ranch-style house. The colonial-style house featured an atrium with a 5.6~m ceiling height. The first story ceiling in the colonial-style house was 2.5~m above the floor, and the second story ceiling was 2.8~m above the floor.
+
+The leakage area in the single story structure was measured to be 0.08~m$^2$ at 10~Pa. The leakage area in the two story structure was measured to be 0.18~m$^2$ at 10~Pa.
+
+The natural gas burner in each set of experiments had dimensions of 0.6~m by 0.6~m, and the surface of the burner was approximately 0.6~m above the floor. The heat release rate for the single story ranch house was 250~kW, and 500~kW for the two story colonial. The locations of the burner in each house are indicated in the floor plans. The labels for the measurement devices in the one and two story houses are listed in Tables~\ref{Ranch_devices} and~\ref{Colonial_devices}, respectively. Three experiments with unique sequences of events (e.g. opening doors and windows) were conducted in each style of house. All experiments began with all exterior doors and windows closed and the times at which each door and window was opened are listed Table~\ref{Ranch_events} and~\ref{Colonial_events}.
+
+\begin{figure}[p]
+\includegraphics[width=\textwidth]{FIGURES/UL_NIJ_Houses/UL_NIJ_Ranch_layout}
+\caption[Layout of the one story ranch-style house in the UL/NIJ experiments]{Layout of the one story ranch-style house in the UL/NIJ experiments.}
+\label{Ranch_layout}
+\end{figure}
+
+\begin{figure}[p]
+\includegraphics[width=\textwidth]{FIGURES/UL_NIJ_Houses/UL_NIJ_Colonial_layout}
+\caption{Geometry of UL NIJ Colonial-style House}
+\label{Colonial_layout}
+\end{figure}
+
+\begin{table}[ht!]
+\begin{center}
+\begin{tabular}{|c|l||c|l||c|l|}
+\hline
+Temp.           	& Location 			& Pressure          	& Location 		& Velocity              & Location 	\\ \hline \hline
+1TC  				& Bedroom 1 		& 1PT 					& Bedroom 1 	& 1BDP 					& Window E 	\\ \hline
+2TC  				& Bedroom 2 		& 2PT 					& Bedroom 2 	& 2BDP 					& Window D 	\\ \hline
+3TC  				& Bedroom 3 		& 3PT 					& Bedroom 3 	& 3BDP 					& Window B 	\\ \hline
+4TC  				& Hallway 			& 4PT 					& Living Room 	& 4BDP 					& Hallway 	\\ \hline
+5TC  				& Living Room 		& 5PT 					& Kitchen 		& 5BDP 					& Window F 	\\ \hline
+6TC  				& Dining Room 		& 6PT 					& Dining Room 	& 6BDP 					& Front Door\\ \hline
+7TC  				& Kitchen (East) 	& \multicolumn{2}{r||}{}				& 7BDP 					& Window A 	\\ \cline{1-2} \cline{5-6}
+8TC  				& Kitchen (West) 	& \multicolumn{2}{r}{}					& \multicolumn{2}{r|}{}  			\\ \hline
+\end{tabular}
+\end{center}
+\caption[Locations of measurement devices in the UL/NIJ ranch-style house]
+{Locations of measurement devices in the UL/NIJ ranch-style house.}
+\label{Ranch_devices}
+\end{table}
+
+\begin{table}[ht!]
+\begin{center}
+\begin{tabular}{|c|l||c|l||c|l|}
+\hline
+Temp.           	& Location 					& Pressure          	& Location 			& Velocity              & Location 		\\ \hline \hline
+1TC  				& Master Bedroom 			& 1PT 					& Master Bedroom 	& 1BDP 					& Front Door 	\\ \hline
+2TC  				& Bedroom 2 				& 2PT 					& Bedroom 2 		& 2BDP 					& Window J 		\\ \hline
+3TC  				& Bedroom 3 				& 3PT 					& Bedroom 3 		& 3BDP 					& Window K 		\\ \hline
+4TC  				& Bedroom 4 				& 4PT 					& Bedroom 4 		& 4BDP 					& Window L 		\\ \hline
+5TC  				& 2nd Floor Hallway (East) 	& 5PT 					& Front Corridor 	& 5BDP 					& Window E 		\\ \hline
+6TC  				& 2nd Floor Hallway (Middle)& 6PT 					& Living Room 		& 6BDP 					& Window A 		\\ \hline
+7TC  				& Family Room (West Corner)	& 8PT 					& Den 				& \multicolumn{2}{r|}{}  				\\ \cline{1-4}
+8TC  				& Family Room (Center) 		& 9PT 					& Family Room 		& \multicolumn{2}{r|}{}  				\\ \cline{1-4}
+9TC  				& Den 						& 10PT 					& Kitchen 			& \multicolumn{2}{r|}{} 				\\ \cline{1-4}
+10TC 				& Living Room 				& \multicolumn{4}{r|}{}											 					\\ \cline{1-2}
+11TC  				& Under 2nd Floor Hallway 	& \multicolumn{4}{r|}{} 															\\ \cline{1-2}
+12TC  				& Foyer 					& \multicolumn{4}{r|}{} 											 				\\ \cline{1-2}
+13TC  				& Dining Room 				& \multicolumn{4}{r|}{} 											 				\\ \cline{1-2}
+14TC  				& Laundry Room 				& \multicolumn{4}{r|}{} 											 				\\ \cline{1-2}
+15TC  				& Kitchen 					& \multicolumn{4}{r|}{} 											 				\\ \hline
+\end{tabular}
+\end{center}
+\caption[Locations of measurement devices in the UL/NIJ colonial-style house]
+{Locations of measurement devices in the UL/NIJ colonial-style house.}
+\label{Colonial_devices}
+\end{table}
+
+\begin{table}[ht!]
+\begin{center}
+\begin{tabular}{|c||c|c|c|}
+\hline
+Event 			& Test 1  	& Test 2 	& Test 5 	\\ \hline \hline
+Front Door Open & 300 s 	& 1200 s 	& 1290 s 	\\ \hline
+Back Door Open  & 1275 s 	& 1860 s 	& 300 s 	\\ \hline
+Window A Open  	& 1260 s 	& 1845 s 	& - 		\\ \hline
+Window B Open  	& 1245 s 	& 1830 s 	& - 		\\ \hline
+Window C Open  	& 1230 s 	& 900 s 	& - 		\\ \hline
+Window D Open  	& 1215 s 	& - 		& 600 s 	\\ \hline
+Window E Open  	& 600 s 	& 600 s 	& - 		\\ \hline
+Window F Open  	& 1200 s 	& 1815 s 	& 1200 s 	\\ \hline
+Window G Open  	& 1300 s 	& 1875 s 	& - 		\\ \hline
+Burner Off 		& 900 s 	& 1500 s 	& 900 s 	\\ \hline
+\end{tabular}
+\end{center}
+\caption[Sequence of events for the one story ranch-style house in the UL/NIJ experiments]
+{Sequence of events for the one story ranch-style house in the UL/NIJ experiments.}
+\label{Ranch_events}
+\end{table}
+
+\begin{table}[ht!]
+\begin{center}
+\begin{tabular}{|c||c|c|c|}
+\hline
+Event 			& Test 1  	& Test 4 	& Test 6 	\\ \hline \hline
+Front Door Open & 600 s 	& 600 s 	& 1200 s 	\\ \hline
+Back Door Open  & - 		& - 		& - 		\\ \hline
+Window A Open  	& - 		& - 		& 900 s 	\\ \hline
+Window B Open  	& - 		& 900 s 	& - 		\\ \hline
+Window C Open  	& - 		& - 		& - 		\\ \hline
+Window D Open  	& - 		& - 		& - 		\\ \hline
+Window E Open  	& - 		& - 		& - 		\\ \hline
+Window F Open  	& - 		& - 		& - 		\\ \hline
+Window G Open  	& - 		& - 		& - 		\\ \hline
+Window H Open  	& - 		& - 		& - 		\\ \hline
+Window I Open  	& - 		& - 		& - 		\\ \hline
+Window J Open  	& - 		& - 		& - 		\\ \hline
+Window K Open  	& 900 s 	& 1260 s 	& 600 s 	\\ \hline
+Window L Open  	& 1200 s 	& 1320 s 	& - 		\\ \hline
+Window M Open  	& - 		& - 		& - 		\\ \hline
+Burner Off 		& 1500 s 	& 1200 s 	& 1500 s 	\\ \hline
+\end{tabular}
+\end{center}
+\caption[Sequence of events for the two story colonial-style house in the UL/NIJ experiments]
+{Sequence of events for the two story colonial-style house in the UL/NIJ experiments.}
+\label{Colonial_events}
+\end{table}
 
 
+\FloatBarrier
 
 \section{Ulster SBI Corner Heat Flux Measurements}
 \label{Ulster_SBI_Description}
@@ -1873,6 +2155,46 @@ Extinction of the fire is achieved using the {\em critical flame temperature} co
 \label{USCG_HAI_Water_Mist_Description}
 
 The U.S. Coast Guard sponsored a series of experiments to assess the fire suppression capabilities of a variety of water mist systems in a variety of ship board configurations. The experiments were conducted in 1999 by Hughes Associates, Inc., in a simulated machinery space aboard the test vessel {\em State of Maine} at the USCG Fire and Safety Test Detachment, Mobile, Alabama~\cite{Back:USCG1999}. The space had nominal dimensions of 7~m by 5~m by 3~m, containing two steel engine mock-ups each measuring 3~m by 1~m by 1.5~m. The space was equipped with a door for natural ventilation and a forced ventilation system providing approximately 15 air changes per hour. Five commercially available water mist systems were evaluated. The obstructed heptane spray fires ranged in size from approximately 250~kW to 1~MW.
+
+
+\section{USFS/Catchpole Experiments}
+\label{USFS_Catchpole_Description}
+
+The U.S. Forest Service and collaborators from the University of New South Wales, Australia, conducted 354 fire experiments in a wind tunnel with a cross section of 3~m by 3~m~\cite{Catchpole:CST1998}. The tunnel is part of the Intermountain Fire Sciences Laboratory in Missoula, Montana. The fires involved four different fuel species, a range of fuel bed depths, packing ratios, moisture contents and wind speeds. The fuels were regular and coarse excelsior ({\em Populus tranulos}), and pine needles and heartwood sticks ({\em Pinus ponderosa}). The vegetation was placed in a 1~m wide and 8~m long tray. An approximately 5~cm wide tray of ethanol liquid was positioned at one end, and the fire spread rate was measured using photocells and video analysis.
+
+\subsubsection{Modeling Notes}
+
+The vegetation is modeled as a collection of cylindrical Lagrangian particles. The pyrolysis model assigned to the particles is described in the FDS User's Guide~\cite{FDS_Users_Guide}, chapter ``Earth, Wind and Fire,'' section ``Thermal Degradation Model for Vegetation.''
+
+
+\section{USFS/Corsica Experiments}
+\label{USFS_Corsica_Description}
+
+Perez-Ramirez et al.~at the University of Corsica, France, and Mell at the U.S. Forest Service's Pacific Wildland Fire Science Laboratory in Seattle, Washington, simulated six bench-scale fires spreading over a 1~m wide by 2~m long bed of pine needles~\cite{Perez-Ramirez:FT2017}. The heat release rates from the spreading fires were measured in a furniture calorimeter. The fuel beds were made up of {\em Pinus pinaster} needles, and three different fuel loadings (0.6, 0.9 and 1.2 kg/m$^2$) were tested under no-slope and up-slope conditions (20$^\circ$).
+
+\subsubsection{Modeling Notes}
+
+The pine needles are modeled as a collection of cylindrical Lagrangian particles. The pyrolysis model assigned to the particles is described in the FDS User's Guide~\cite{FDS_Users_Guide}, chapter ``Earth, Wind and Fire,'' section ``Thermal Degradation Model for Vegetation.''
+
+The test parameters are given in Table~\ref{Corsica_Parameters}. 
+
+\begin{table}[ht!]
+\begin{center}
+\begin{tabular}{|l|c||c|c|c|c|}
+\hline
+Eexperiment  & Dry Fuel Loading (kg/m$^2$)  	& Slope ($^\circ$)	& Dry Mass per Volume (kg/m$^3$) & Packing Ratio & Bed Depth (cm)	\\ \hline \hline
+1\_0         & 0.6                          	& 0             	& 17                             & 0.033         & 3.5          	\\ \hline
+2\_0         & 0.9                          	& 0             	& 16                             & 0.031         & 5.5          	\\ \hline
+3\_0         & 1.2                          	& 0             	& 18                             & 0.035         & 6.5          	\\ \hline
+1\_20        & 0.6                          	& 20             	& 17                             & 0.033         & 3.5          	\\ \hline
+2\_20        & 0.9                          	& 20             	& 16                             & 0.031         & 5.5          	\\ \hline
+3\_20        & 1.2                          	& 20             	& 18                             & 0.035         & 7.5          	\\ \hline
+\end{tabular}
+\end{center}
+\caption[Test matrix for the USFS/Corsica Experiments]
+{Test matrix for the USFS/Corsica Experiments.}
+\label{Corsica_Parameters}
+\end{table}
 
 
 

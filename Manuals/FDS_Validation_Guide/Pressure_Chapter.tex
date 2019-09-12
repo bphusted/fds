@@ -59,11 +59,11 @@ Note that for the closed door tests, there is often a dramatic drop in the predi
 
 \section{LLNL Enclosure Experiments}
 
-The reported compartment pressure in the LLNL Enclosure experiments was taken near the ceiling of the compartment, 0.6~m from the wall including the exhaust duct, and 0.6~m from the wall opposite the wall with the door.
+The reported compartment pressure in the LLNL Enclosure experiments was taken near the ceiling of the compartment, 0.6~m from the wall including the exhaust duct, and 0.6~m from the wall opposite the wall with the door. Further details of the experiments can be found in Section~\ref{LLNL_Enclosure_Description}.
 
-In the figures on the following pages, the open circles represent the measured pressure; the line represents the predicted pressure. The predicted pressures are time-averaged over a time interval that is one-tenth the total simulation time. In general, the short-duration pressure spike that is typical of fires within relatively tight compartments has been smoothed over in the reported test data. Depending on the simulation, it often appears in the simulation data. The comparison of measurement and prediction is based on the final few pressure points, not the initial spike.
+In the figures on the following pages, the open circles represent the measured pressure; the solid line represents the predicted pressure. The predicted pressures are time-averaged over a time interval of 30~s, whereas the measurements appear to be instantaneous values separated by hundreds or thousands of seconds. Because of this, the short-duration pressure spike that is typical of fires within relatively tight compartments is seen in the model prediction but not necessarily the measured data. The comparison of measurement and prediction is based on the final few pressure points, not the initial spike.
 
-The results of all 64 experiments are plotted for completeness, but a few of the results were excluded from the computation of the summary statistics, including Tests 3, 25, 27, 37, 39, and 48. In these experiments, the fire self-extinguished near the time of the last pressure measurement, sometimes leading to a reported final pressure being less than the initial pressure, typical when there is a sudden decrease in the heat release rate.
+The results of all 64 experiments are plotted for completeness, but a few of the results were excluded from the computation of the summary statistics because the fire self-extinguished near the time of the last pressure measurement, sometimes leading to a reported final pressure being less than the initial pressure, typical when there is a sudden decrease in the heat release rate. In other cases, the difference between initial and final measured pressure was too small to make a meaningful comparison.
 
 For cases where the door to the compartment was open, the measured gauge pressures at the start of the experiment ranged from 0~Pa to 10~Pa. There is not enough information in the test report to explain why the starting pressures were not 0~Pa; thus, the measured pressures were adjusted so that the starting pressure is 0~Pa.
 
@@ -289,6 +289,98 @@ The PRISME SOURCE experiments were conducted in a single compartment with a well
 \end{figure}
 
 
+
+\clearpage
+
+\section{UL/NIJ House Experiments}
+
+A description and drawings from these experiments are included in Section~\ref{UL_NIJ_Description}
+
+For both the one and two-story house experiments, pressures were measured at three elevations in various locations. All pressure taps were installed within 0.3~m of a wall. In the single-story house, the taps were located 0.3~m (1~ft), 1.2~m (4~ft), and 2.1~m (7~ft) below the ceiling. In the two-story house, the taps were located 0.3~m (1~ft), 2.4~m (8~ft), and 4.6~m (15~ft) below the ceiling in the family room atrium (9PT), and 0.3~m (1~ft), 1.2~m (4~ft), and 2.1~m (7~ft) below the ceiling in all other rooms. Note that for the two-story house, Test~6, the den was closed and no pressure measurements are reported for this room.
+
+The plots on the following pages compare the measured pressures with corresponding model predictions. Note that the pressures are reported relative to the ambient pressure at the given elevation. That is, all reported pressures are zero at the time of ignition.
+
+\newpage
+
+\begin{figure}[p]
+\begin{tabular*}{\textwidth}{l@{\extracolsep{\fill}}r}
+\includegraphics[height=2.15in]{SCRIPT_FIGURES/UL_NIJ_Houses/UL_NIJ_Single_Story_Gas_1_Pressure_1} &
+\includegraphics[height=2.15in]{SCRIPT_FIGURES/UL_NIJ_Houses/UL_NIJ_Single_Story_Gas_1_Pressure_2} \\
+\includegraphics[height=2.15in]{SCRIPT_FIGURES/UL_NIJ_Houses/UL_NIJ_Single_Story_Gas_1_Pressure_3} &
+\includegraphics[height=2.15in]{SCRIPT_FIGURES/UL_NIJ_Houses/UL_NIJ_Single_Story_Gas_1_Pressure_4} \\
+\includegraphics[height=2.15in]{SCRIPT_FIGURES/UL_NIJ_Houses/UL_NIJ_Single_Story_Gas_1_Pressure_5} &
+\includegraphics[height=2.15in]{SCRIPT_FIGURES/UL_NIJ_Houses/UL_NIJ_Single_Story_Gas_1_Pressure_6} \\
+\end{tabular*}
+\caption{UL/NIJ Experiments, Pressure, Single-Story (Ranch) House, Test 1}
+\label{UL_NIJ_Pres_Ranch_1}
+\end{figure}
+
+\begin{figure}[p]
+\begin{tabular*}{\textwidth}{l@{\extracolsep{\fill}}r}
+\includegraphics[height=2.15in]{SCRIPT_FIGURES/UL_NIJ_Houses/UL_NIJ_Single_Story_Gas_2_Pressure_1} &
+\includegraphics[height=2.15in]{SCRIPT_FIGURES/UL_NIJ_Houses/UL_NIJ_Single_Story_Gas_2_Pressure_2} \\
+\includegraphics[height=2.15in]{SCRIPT_FIGURES/UL_NIJ_Houses/UL_NIJ_Single_Story_Gas_2_Pressure_3} &
+\includegraphics[height=2.15in]{SCRIPT_FIGURES/UL_NIJ_Houses/UL_NIJ_Single_Story_Gas_2_Pressure_4} \\
+\includegraphics[height=2.15in]{SCRIPT_FIGURES/UL_NIJ_Houses/UL_NIJ_Single_Story_Gas_2_Pressure_5} &
+\includegraphics[height=2.15in]{SCRIPT_FIGURES/UL_NIJ_Houses/UL_NIJ_Single_Story_Gas_2_Pressure_6} \\
+\end{tabular*}
+\caption{UL/NIJ Experiments, Pressure, Single-Story (Ranch) House, Test 2}
+\label{UL_NIJ_Pres_Ranch_2}
+\end{figure}
+
+\begin{figure}[p]
+\begin{tabular*}{\textwidth}{l@{\extracolsep{\fill}}r}
+\includegraphics[height=2.15in]{SCRIPT_FIGURES/UL_NIJ_Houses/UL_NIJ_Single_Story_Gas_5_Pressure_1} &
+\includegraphics[height=2.15in]{SCRIPT_FIGURES/UL_NIJ_Houses/UL_NIJ_Single_Story_Gas_5_Pressure_2} \\
+\includegraphics[height=2.15in]{SCRIPT_FIGURES/UL_NIJ_Houses/UL_NIJ_Single_Story_Gas_5_Pressure_3} &
+\includegraphics[height=2.15in]{SCRIPT_FIGURES/UL_NIJ_Houses/UL_NIJ_Single_Story_Gas_5_Pressure_4} \\
+\includegraphics[height=2.15in]{SCRIPT_FIGURES/UL_NIJ_Houses/UL_NIJ_Single_Story_Gas_5_Pressure_5} &
+\includegraphics[height=2.15in]{SCRIPT_FIGURES/UL_NIJ_Houses/UL_NIJ_Single_Story_Gas_5_Pressure_6} \\
+\end{tabular*}
+\caption{UL/NIJ Experiments, Pressure, Single-Story (Ranch) House, Test 5}
+\label{UL_NIJ_Pres_Ranch_5}
+\end{figure}
+
+\begin{figure}[p]
+\begin{tabular*}{\textwidth}{l@{\extracolsep{\fill}}r}
+\includegraphics[height=2.15in]{SCRIPT_FIGURES/UL_NIJ_Houses/UL_NIJ_Two_Story_Gas_1_Pressure_1} &
+\includegraphics[height=2.15in]{SCRIPT_FIGURES/UL_NIJ_Houses/UL_NIJ_Two_Story_Gas_1_Pressure_3} \\
+\includegraphics[height=2.15in]{SCRIPT_FIGURES/UL_NIJ_Houses/UL_NIJ_Two_Story_Gas_1_Pressure_4} &
+\includegraphics[height=2.15in]{SCRIPT_FIGURES/UL_NIJ_Houses/UL_NIJ_Two_Story_Gas_1_Pressure_5} \\
+\includegraphics[height=2.15in]{SCRIPT_FIGURES/UL_NIJ_Houses/UL_NIJ_Two_Story_Gas_1_Pressure_6} &
+\includegraphics[height=2.15in]{SCRIPT_FIGURES/UL_NIJ_Houses/UL_NIJ_Two_Story_Gas_1_Pressure_8} \\
+\includegraphics[height=2.15in]{SCRIPT_FIGURES/UL_NIJ_Houses/UL_NIJ_Two_Story_Gas_1_Pressure_9}
+\end{tabular*}
+\caption{UL/NIJ Experiments, Pressure, Two-Story (Colonial) House, Test 1}
+\label{UL_NIJ_Pres_Colonial_1}
+\end{figure}
+
+\begin{figure}[p]
+\begin{tabular*}{\textwidth}{l@{\extracolsep{\fill}}r}
+\includegraphics[height=2.15in]{SCRIPT_FIGURES/UL_NIJ_Houses/UL_NIJ_Two_Story_Gas_4_Pressure_1} &
+\includegraphics[height=2.15in]{SCRIPT_FIGURES/UL_NIJ_Houses/UL_NIJ_Two_Story_Gas_4_Pressure_3} \\
+\includegraphics[height=2.15in]{SCRIPT_FIGURES/UL_NIJ_Houses/UL_NIJ_Two_Story_Gas_4_Pressure_4} &
+\includegraphics[height=2.15in]{SCRIPT_FIGURES/UL_NIJ_Houses/UL_NIJ_Two_Story_Gas_4_Pressure_5} \\
+\includegraphics[height=2.15in]{SCRIPT_FIGURES/UL_NIJ_Houses/UL_NIJ_Two_Story_Gas_4_Pressure_6} &
+\includegraphics[height=2.15in]{SCRIPT_FIGURES/UL_NIJ_Houses/UL_NIJ_Two_Story_Gas_4_Pressure_8} \\
+\includegraphics[height=2.15in]{SCRIPT_FIGURES/UL_NIJ_Houses/UL_NIJ_Two_Story_Gas_4_Pressure_9}
+\end{tabular*}
+\caption{UL/NIJ Experiments, Pressure, Two-Story (Colonial) House, Test 4}
+\label{UL_NIJ_Pres_Colonial_4}
+\end{figure}
+
+\begin{figure}[p]
+\begin{tabular*}{\textwidth}{l@{\extracolsep{\fill}}r}
+\includegraphics[height=2.15in]{SCRIPT_FIGURES/UL_NIJ_Houses/UL_NIJ_Two_Story_Gas_6_Pressure_1} &
+\includegraphics[height=2.15in]{SCRIPT_FIGURES/UL_NIJ_Houses/UL_NIJ_Two_Story_Gas_6_Pressure_3} \\
+\includegraphics[height=2.15in]{SCRIPT_FIGURES/UL_NIJ_Houses/UL_NIJ_Two_Story_Gas_6_Pressure_4} &
+\includegraphics[height=2.15in]{SCRIPT_FIGURES/UL_NIJ_Houses/UL_NIJ_Two_Story_Gas_6_Pressure_5} \\
+\includegraphics[height=2.15in]{SCRIPT_FIGURES/UL_NIJ_Houses/UL_NIJ_Two_Story_Gas_6_Pressure_6} &
+\includegraphics[height=2.15in]{SCRIPT_FIGURES/UL_NIJ_Houses/UL_NIJ_Two_Story_Gas_6_Pressure_9} 
+\end{tabular*}
+\caption{UL/NIJ Experiments, Pressure, Two-Story (Colonial) House, Test 6}
+\label{UL_NIJ_Pres_Colonial_6}
+\end{figure}
 
 \clearpage
 

@@ -149,17 +149,23 @@ for i=2:n_plots
     % Check to see if g line has been activated in configuration file
     gtest = strcmp(parameters(strcmp(headers,'switch_id')),'g'); % used to ignore scatplot
 
-    % remove this plot from drange if gtest
-    if (gtest)
-        drange(drange_index)=[];
-        drange_index=drange_index-1;
-    end
-
     if any(itest) && (dtest || otest || ftest || gtest)
 
+        % remove this plot from drange if gtest
+        if (gtest)
+            drange(drange_index)=[];
+            drange_index=drange_index-1;
+        end
+
         if ~ftest
-            if exist('K')
-                clear K
+            if exist('K1')
+                clear K1
+            end
+            if exist('K2')
+                clear K2
+            end
+            if exist('d1_Key')
+                clear d1_Key
             end
             if exist('d2_Key')
                 clear d2_Key
@@ -168,7 +174,9 @@ for i=2:n_plots
             figure
         else
             hold on
-            K_save = K;
+            K1_save = K1;
+            K2_save = K2;
+            d1_Key_save = d1_Key;
             d2_Key_save = d2_Key;
         end
         set(gca,'Units',Plot_Units)
@@ -208,7 +216,8 @@ for i=2:n_plots
                 % Clear flag for stat_x_y metric
                 using_stat_x_y = 0;
                 using_stat_x_y_check_zero = 0;
-                indices = find(d1_Comp_Start<=M(:,d1_Ind_Col) & M(:,d1_Ind_Col)<=d1_Comp_End);
+                indices = find(d1_Comp_Start    <=M(:,d1_Ind_Col)    & M(:,d1_Ind_Col)   <=d1_Comp_End & ...
+                               d1_Dep_Comp_Start<=M(:,d1_Dep_Col(1)) & M(:,d1_Dep_Col(1))<=d1_Dep_Comp_End);
                 if strcmp(Metric,'max')
                     Save_Measured_Metric(i,j,1) = max(M(indices,d1_Dep_Col))-d1_Initial_Value;
                 elseif strcmp(Metric,'min')
@@ -222,6 +231,9 @@ for i=2:n_plots
                         Save_Measured_Metric(i,1,1) = max(M(indices,d1_Dep_Col))-d1_Initial_Value;
                         using_stat_x_y_check_zero = 1;
                     end
+                elseif strcmp(Metric,'slope')
+                    p = polyfit(M(indices,d1_Ind_Col),M(indices,d1_Dep_Col),1);
+                    Save_Measured_Metric(i,j,1) = p(1);
                 elseif strcmp(Metric,'mean')
                     Save_Measured_Metric(i,j,1) = abs(mean(M(indices,d1_Dep_Col))-d1_Initial_Value);
                 % If mean_x_y is specified for a plot with multiple curves,
@@ -273,15 +285,30 @@ for i=2:n_plots
                 end
                 if ~ftest
                     if strcmp(Plot_Type,'linear')
-                        K(j) = plot(X,Y,char(style(j))); hold on
+                        K1(j) = plot(X,Y,char(style(j))); hold on
+                        if strcmp(Metric,'slope') plot([0 10000],[p(2),p(2)+10000*p(1)],'r-'); end
                     elseif strcmp(Plot_Type,'loglog')
-                        K(j) = loglog(X,Y,char(style(j))); hold on
+                        K1(j) = loglog(X,Y,char(style(j))); hold on
                     elseif strcmp(Plot_Type,'semilogx')
-                        K(j) = semilogx(X,Y,char(style(j))); hold on
+                        K1(j) = semilogx(X,Y,char(style(j))); hold on
                     elseif strcmp(Plot_Type,'semilogy')
-                        K(j) = semilogy(X,Y,char(style(j))); hold on
+                        K1(j) = semilogy(X,Y,char(style(j))); hold on
                     end
-                    set(K(j),'linewidth',Line_Width)
+                    set(K1(j),'linewidth',Line_Width)
+                else
+                    if ~strcmp(char(style(j)),'blank')
+                       if strcmp(Plot_Type,'linear')
+                           K1(length(K1_save)+j) = plot(X,Y,char(style(j))); hold on
+                           if strcmp(Metric,'slope') plot([0 10000],[p(2),p(2)+10000*p(1)],'r-'); end
+                       elseif strcmp(Plot_Type,'loglog')
+                           K1(length(K1_save)+j) = loglog(X,Y,char(style(j))); hold on
+                       elseif strcmp(Plot_Type,'semilogx')
+                           K1(length(K1_save)+j) = semilogx(X,Y,char(style(j))); hold on
+                       elseif strcmp(Plot_Type,'semilogy')
+                           K1(length(K1_save)+j) = semilogy(X,Y,char(style(j))); hold on
+                       end
+                       set(K1(length(K1_save)+j),'linewidth',Line_Width)
+                    end
                 end
             end
         catch
@@ -320,7 +347,8 @@ for i=2:n_plots
                 % Clear flag for stat_x_y metric
                 using_stat_x_y = 0;
                 using_stat_x_y_check_zero = 0;
-                indices = find(d2_Comp_Start<=M(:,d2_Ind_Col) & M(:,d2_Ind_Col)<=d2_Comp_End);
+                indices = find(d2_Comp_Start    <=M(:,d2_Ind_Col)    & M(:,d2_Ind_Col)   <=d2_Comp_End & ...
+                               d2_Dep_Comp_Start<=M(:,d2_Dep_Col(1)) & M(:,d2_Dep_Col(1))<=d2_Dep_Comp_End);
 
                 M_Ind = M(indices,d2_Ind_Col);
                 M_Dep = sum(M(indices,d2_Dep_Col),2);
@@ -338,6 +366,9 @@ for i=2:n_plots
                         Save_Predicted_Metric(i,1,1) = max(M_Dep)-d2_Initial_Value;
                         using_stat_x_y_check_zero = 1;
                     end
+                elseif strcmp(Metric,'slope')
+                    p = polyfit(M(indices,d2_Ind_Col),M(indices,d2_Dep_Col),1);
+                    Save_Predicted_Metric(i,j,1) = p(1);
                 elseif strcmp(Metric,'mean')
                     Save_Predicted_Metric(i,j,1) = abs(mean(M_Dep)-d2_Initial_Value);
                 % If mean_x_y is specified for a plot with multiple curves,
@@ -394,28 +425,31 @@ for i=2:n_plots
                 end
                 if ~ftest
                     if strcmp(Plot_Type,'linear')
-                        K(length(S1)+j) = plot(X,Y,char(style(j)));
+                        K2(j) = plot(X,Y,char(style(j)));
+                        if strcmp(Metric,'slope') plot([0 10000],[p(2),p(2)+10000*p(1)],'r--'); end
                     elseif strcmp(Plot_Type,'loglog')
-                        K(length(S1)+j) = loglog(X,Y,char(style(j)));
+                        K2(j) = loglog(X,Y,char(style(j)));
                     elseif strcmp(Plot_Type,'semilogx')
-                        K(length(S1)+j) = semilogx(X,Y,char(style(j)));
+                        K2(j) = semilogx(X,Y,char(style(j)));
                     elseif strcmp(Plot_Type,'semilogy')
-                        K(length(S1)+j) = semilogy(X,Y,char(style(j)));
+                        K2(j) = semilogy(X,Y,char(style(j)));
                     end
-                    set(K(length(S1)+j),'linewidth',Line_Width)
+                    set(K2(j),'linewidth',Line_Width)
                 else
-                    if strcmp(Plot_Type,'linear')
-                        K(length(K_save)+j) = plot(X,Y,char(style(j)));
-                    elseif strcmp(Plot_Type,'loglog')
-                        K(length(K_save)+j) = loglog(X,Y,char(style(j)));
-                    elseif strcmp(Plot_Type,'semilogx')
-                        K(length(K_save)+j) = semilogx(X,Y,char(style(j)));
-                    elseif strcmp(Plot_Type,'semilogy')
-                        K(length(K_save)+j) = semilogy(X,Y,char(style(j)));
+                    if ~strcmp(char(style(j)),'blank')
+                       if strcmp(Plot_Type,'linear')
+                           K2(length(K2_save)+j) = plot(X,Y,char(style(j)));
+                           if strcmp(Metric,'slope') plot([0 10000],[p(2),p(2)+10000*p(1)],'r--'); end
+                       elseif strcmp(Plot_Type,'loglog')
+                           K2(length(K2_save)+j) = loglog(X,Y,char(style(j)));
+                       elseif strcmp(Plot_Type,'semilogx')
+                           K2(length(K2_save)+j) = semilogx(X,Y,char(style(j)));
+                       elseif strcmp(Plot_Type,'semilogy')
+                           K2(length(K2_save)+j) = semilogy(X,Y,char(style(j)));
+                       end
+                       set(K2(length(K2_save)+j),'linewidth',Line_Width)
                     end
-                    set(K(length(K_save)+j),'linewidth',Line_Width)
                 end
-
             end
         catch
             display(['Error: Problem with dataplot row ', num2str(i), ' (', Dataname,...
@@ -456,7 +490,7 @@ for i=2:n_plots
             set(gca,'FontSize',Label_Font_Size)
 
             % Inserts title, skips if 'f' switch (avoids overplotting)
-            if ~ftest
+          % if ~ftest
                 if strcmp(Flip_Axis,'no')
                     xlabel(Ind_Title,'Interpreter',Font_Interpreter,'FontSize',Label_Font_Size)
                     ylabel(Dep_Title,'Interpreter',Font_Interpreter,'FontSize',Label_Font_Size)
@@ -470,15 +504,24 @@ for i=2:n_plots
                     text(X_Title_Position,Y_Title_Position,...
                         Plot_Title,'FontSize',Title_Font_Size,'FontName',Font_Name,'Interpreter',Font_Interpreter)
                 end
-            end
+          % end
 
             if size(Key_Position)>0
                 if ~ftest
-                    legend_handle = legend(K,[parsepipe(d1_Key),parsepipe(d2_Key)],'Location',Key_Position);
+                    legend_handle = legend([K1 K2],[parsepipe(d1_Key),parsepipe(d2_Key)],'Location',Key_Position);
                 else
                     % this allows us to handle multiple lines on the same plot
-                    legend_handle = legend(K,[parsepipe(d1_Key),parsepipe(d2_Key_save),parsepipe(d2_Key)],'Location',Key_Position);
-                    d2_Key = [d2_Key_save,'|',d2_Key];
+                    if ~strcmp(d1_Key,'blank')
+                       d1_Key = [d1_Key_save,'|',d1_Key];
+                    else
+                       d1_Key = d1_Key_save;
+                    end
+                    if ~strcmp(d2_Key,'blank')
+                       d2_Key = [d2_Key_save,'|',d2_Key];
+                    else
+                       d2_Key = d2_Key_save;
+                    end
+                    legend_handle = legend([K1 K2],[parsepipe(d1_Key),parsepipe(d2_Key)],'Location',Key_Position);
                 end
                 if strcmp(Key_Position,'EastOutside')
                    set(legend_handle,'Units',Paper_Units)
