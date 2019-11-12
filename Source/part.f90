@@ -926,31 +926,34 @@ VOLUME_INSERT_LOOP: DO IB=1,N_INIT
 
    ENDIF TOTAL_OR_PER_CELL
 
-   ! Adjust particle weighting factor PWT so that desired MASS_PER_VOLUME is achieved
+   IF (N_INSERT>0) THEN
 
-   IF (IN%MASS_PER_TIME>0._EB) THEN
-      PWT0 = IN%MASS_PER_TIME*IN%DT_INSERT/MASS_SUM
-   ELSEIF (IN%MASS_PER_VOLUME>0._EB) THEN
-      PWT0 = IN%MASS_PER_VOLUME*INSERT_VOLUME/MASS_SUM
-   ELSE
-      PWT0 = IN%PARTICLE_WEIGHT_FACTOR
-   ENDIF
+      ! Adjust particle weighting factor PWT so that desired MASS_PER_VOLUME is achieved
 
-   DO IIP=1,MIN(MAXIMUM_PARTICLES,N_INSERT)
-      IP = LP_INDEX_LOOKUP(IIP)
-      LP => LAGRANGIAN_PARTICLE(IP)
-      IF (IN%MASS_PER_VOLUME>0._EB) THEN
-         LP%PWT = LP%PWT*PWT0*DX(LP%ONE_D%IIG)*DY(LP%ONE_D%JJG)*DZ(LP%ONE_D%KKG)*RDXI*RDETA*RDZETA
+      IF (IN%MASS_PER_TIME>0._EB) THEN
+         PWT0 = IN%MASS_PER_TIME*IN%DT_INSERT/MASS_SUM
+      ELSEIF (IN%MASS_PER_VOLUME>0._EB) THEN
+         PWT0 = IN%MASS_PER_VOLUME*INSERT_VOLUME/MASS_SUM
       ELSE
-         LP%PWT = LP%PWT*PWT0
+         PWT0 = IN%PARTICLE_WEIGHT_FACTOR
       ENDIF
-   ENDDO
+   
+      DO IIP=1,MIN(MAXIMUM_PARTICLES,N_INSERT)
+         IP = LP_INDEX_LOOKUP(IIP)
+         LP => LAGRANGIAN_PARTICLE(IP)
+         IF (IN%MASS_PER_VOLUME>0._EB) THEN
+            LP%PWT = LP%PWT*PWT0*DX(LP%ONE_D%IIG)*DY(LP%ONE_D%JJG)*DZ(LP%ONE_D%KKG)*RDXI*RDETA*RDZETA
+         ELSE
+            LP%PWT = LP%PWT*PWT0
+         ENDIF
+         IF (ANY(IN%PATH_RAMP_INDEX>0)) LP%PATH_PARTICLE=.TRUE.
+         LP%INIT_INDEX = IB
+      ENDDO
 
-   IF (ANY(IN%PATH_RAMP_INDEX>0)) LP%PATH_PARTICLE=.TRUE.
-   LP%INIT_INDEX = IB
-
+   ENDIF
+   
    DEALLOCATE(LP_INDEX_LOOKUP)
-
+   
    IN%ALREADY_INSERTED(NM) = .TRUE.
 
 ENDDO VOLUME_INSERT_LOOP
@@ -1081,7 +1084,7 @@ END SUBROUTINE VOLUME_INIT_PARTICLE
 SUBROUTINE INITIALIZE_SINGLE_PARTICLE
 
 REAL(EB) :: X1,X2,AREA,LENGTH,SCALE_FACTOR,RADIUS,MPUA,LP_VOLUME
-INTEGER :: N
+INTEGER :: N,I
 TYPE (ONE_D_M_AND_E_XFER_TYPE), POINTER :: ONE_D=>NULL()
 
 SF => SURFACE(LPC%SURF_INDEX)
@@ -1105,7 +1108,7 @@ IF (LPC%SOLID_PARTICLE) THEN
                  ABS(ORIENTATION_VECTOR(3,LPC%ORIENTATION_INDEX))*DX(ONE_D%IIG)*DY(ONE_D%JJG)) * &
                  LAGRANGIAN_PARTICLE_CLASS(LP%CLASS_INDEX)%FREE_AREA_FRACTION
          SELECT CASE (SF%GEOMETRY)
-            CASE (SURF_CARTESIAN)
+            CASE (SURF_CARTESIAN,SURF_BLOWING_PLATE)
                LP%ONE_D%AREA = AREA
                IF (SF%THERMALLY_THICK) THEN
                   DO N=1,SF%N_LAYERS
@@ -1137,7 +1140,9 @@ IF (LPC%SOLID_PARTICLE) THEN
                   LP%PWT = AREA/(PI*SF%THICKNESS**2)
                ENDIF
          END SELECT
+
       CASE (POROUS_DRAG)
+
          MPUA = 0._EB
          LP_VOLUME = LPC%POROUS_VOLUME_FRACTION*LP%DX*LP%DY*LP%DZ
          SELECT CASE (SF%GEOMETRY)
@@ -1219,7 +1224,12 @@ ELSEIF (LPC%LIQUID_DROPLET) THEN
 
 ENDIF
 
-ONE_D%TMP(0:SF%N_CELLS_INI+1) = LPC%TMP_INITIAL
+IF (SF%THERMALLY_THICK .AND. SF%TMP_INNER(1)>0._EB) THEN
+   DO I=0,SF%N_CELLS_INI+1
+      ONE_D%TMP(I) = SF%TMP_INNER(SF%LAYER_INDEX(I))
+   ENDDO
+ENDIF
+IF (LPC%TMP_INITIAL>0._EB) ONE_D%TMP(0:SF%N_CELLS_INI+1) = LPC%TMP_INITIAL
 ONE_D%TMP_F = ONE_D%TMP(1)
 
 ! Check if fire spreads radially over this surface type, and if so, set T_IGN appropriately
@@ -1469,7 +1479,7 @@ PARTICLE_LOOP: DO IP=1,NLP
                ENDIF
             ENDDO
             ICF = ICF_MIN
-            ! If the CFACE normal points up, force the particle to follow the contour. If the normal points down, 
+            ! If the CFACE normal points up, force the particle to follow the contour. If the normal points down,
             ! put the particle back into the gas phase.
             IF (DOT_PRODUCT(CFACE(ICF)%NVEC,GVEC)>0._EB) THEN  ! normal points down
                LP%CFACE_INDEX = 0
@@ -1616,6 +1626,7 @@ PARTICLE_LOOP: DO IP=1,NLP
                   LP%U = 0._EB
                   LP%V = 0._EB
                   LP%W = -LPC%VERTICAL_VELOCITY
+                  LP%SPLAT = .FALSE.
                CASE (-3) DIRECTION
                   IF (.NOT.ALLOW_UNDERSIDE_PARTICLES) THEN
                      LP%U = 0._EB
@@ -1647,31 +1658,29 @@ PARTICLE_LOOP: DO IP=1,NLP
 
       ! If the droplet was attached to a solid WALL (LP%ONE_D%IOR/=0), but now it is not, change its course. If the droplet was
       ! dripping down a vertical surface (IOR=+-1,2), make it go under the solid and then move upward to (possibly) stick
-      ! to the underside or drip off. If the droplet moves off an upward facing horizontal surface (IOR=3), reverse its course
-      ! and drop it down the side of the solid obstruction. If the droplet moves off a downward facing horizontal obstruction
-      ! (IOR=-3), do nothing and let it continue free-falling.
+      ! to the underside or drip off. If the droplet moves off an upward or downward facing horizontal surface (IOR=+-3), reverse
+      ! its course and drop it down the side of the solid obstruction. 
 
       LP%WALL_INDEX = WALL_INDEX(IC_NEW,-LP%ONE_D%IOR)
 
-      IF (LP%WALL_INDEX>0 .AND. WALL(LP%WALL_INDEX)%BOUNDARY_TYPE/=SOLID_BOUNDARY) THEN
+      IF (WALL(LP%WALL_INDEX)%BOUNDARY_TYPE/=SOLID_BOUNDARY) THEN
          SELECT CASE(LP%ONE_D%IOR)
             CASE( 1)
                LP%X = LP%X - 0.2_EB*DX(LP%ONE_D%IIG)
-               LP%W = -LP%W
+               LP%W = -2._EB*LP%W
             CASE(-1)
                LP%X = LP%X + 0.2_EB*DX(LP%ONE_D%IIG)
-               LP%W = -LP%W
+               LP%W = -2._EB*LP%W
             CASE( 2)
                LP%Y = LP%Y - 0.2_EB*DY(LP%ONE_D%JJG)
-               LP%W = -LP%W
+               LP%W = -2._EB*LP%W
             CASE(-2)
                LP%Y = LP%Y + 0.2_EB*DY(LP%ONE_D%JJG)
-               LP%W = -LP%W
-            CASE( 3)
+               LP%W = -2._EB*LP%W
+            CASE(-3,3)
                LP%U = -LP%U
                LP%V = -LP%V
                LP%Z =  LP%Z - 0.2_EB*DZ(LP%ONE_D%KKG)
-            CASE(-3)
          END SELECT
          LP%ONE_D%IOR = 0
          LP%WALL_INDEX = 0
@@ -2387,7 +2396,7 @@ SPECIES_LOOP: DO Z_INDEX = 1,N_TRACKED_SPECIES
 
                ! Compute thermal and transport properties except D at film temperature
                CALL INTERPOLATE1D_UNIFORM(LBOUND(D_Z(:,Z_INDEX),1),D_Z(:,Z_INDEX),TMP_DROP,D_AIR)
-               
+
                TMP_FILM = TMP_DROP + EVAP_FILM_FAC*(TMP_G - TMP_DROP) ! LC Eq.(18)
                CALL GET_VISCOSITY(ZZ_AIR,MU_AIR,TMP_FILM)
                CALL GET_CONDUCTIVITY(ZZ_AIR,K_AIR,TMP_FILM)
@@ -2473,9 +2482,9 @@ SPECIES_LOOP: DO Z_INDEX = 1,N_TRACKED_SPECIES
                      SELECT CASE(EVAP_MODEL)
                         CASE(-1) ! Ranz Marshall
                            H_MASS   = MAX(2._EB,SHERWOOD)*D_AIR/LENGTH
-                        CASE(0:1) !Shazin M0 - M1, see next code block for Refs
+                        CASE(0:1) !Sazhin M0 - M1, see next code block for Refs
                            H_MASS   = MAX(2._EB,SHERWOOD)*D_AIR/LENGTH*LOG(1._EB+B_NUMBER)/B_NUMBER
-                        CASE(2) !Shazin M2, see next code block for Refs
+                        CASE(2) !Sazhin M2, see next code block for Refs
                            H_MASS   = MAX(2._EB,SHERWOOD)*D_AIR/LENGTH*LOG(1._EB+B_NUMBER)/(B_NUMBER*F_B(B_NUMBER))
                      END SELECT
                   ENDIF
@@ -2487,31 +2496,35 @@ SPECIES_LOOP: DO Z_INDEX = 1,N_TRACKED_SPECIES
                         NUSSELT  = 2._EB + NU_FAC_GAS*SQRT(RE_L)
                         H_HEAT   = NUSSELT*K_AIR/LENGTH
                         IF (Y_DROP <= Y_GAS) THEN
-                           H_MASS = 0._EB
+                           H_MASS   = 0._EB
                         ELSE
-                           SHERWOOD  = 2._EB + NU_FAC_GAS*SQRT(RE_L)
-                           H_MASS = SHERWOOD*D_AIR/LENGTH
+                           SHERWOOD = 2._EB + SH_FAC_GAS*SQRT(RE_L)
+                           H_MASS   = SHERWOOD*D_AIR/LENGTH
                         ENDIF
-                     CASE(0) ! Shazin M0, Eq 106 + 109 with B_T=B_M
+                     CASE(0) ! Sazhin M0, Eq 106 + 109 with B_T=B_M
                         IF (Y_DROP <= Y_GAS) THEN
                            NUSSELT  = 2._EB + NU_FAC_GAS*SQRT(RE_L)
                            H_HEAT   = NUSSELT*K_AIR/LENGTH
-                           H_MASS = 0._EB
+                           H_MASS   = 0._EB
                         ELSE
-                           NUSSELT  = 2._EB + NU_FAC_GAS*SQRT(RE_L)*LOG(1._EB+B_NUMBER)/B_NUMBER
+                           NUSSELT  = ( 2._EB + NU_FAC_GAS*SQRT(RE_L) )*LOG(1._EB+B_NUMBER)/B_NUMBER
                            H_HEAT   = NUSSELT*K_AIR/LENGTH
-                           SHERWOOD  = 2._EB + NU_FAC_GAS*SQRT(RE_L)*LOG(1._EB+B_NUMBER)/(Y_DROP-Y_GAS)
-                           H_MASS = SHERWOOD*D_AIR/LENGTH
+                           SHERWOOD = ( 2._EB + SH_FAC_GAS*SQRT(RE_L) )*LOG(1._EB+B_NUMBER)/(Y_DROP-Y_GAS)
+                           H_MASS   = SHERWOOD*D_AIR/LENGTH
+                           ! above we save a divide and multiply of B_NUMBER
+                           ! the full model corresponding to Sazhin (108) and (109) would be
+                           ! SH = SH_0 * LOG(1+B_M)/B_M
+                           ! H_MASS = SH * D/L * B_M/(Y_D-Y_G)
                         ENDIF
-                     CASE(1) ! Shazin M1, Eq 106 + 109 with eq 102.
+                     CASE(1) ! Sazhin M1, Eq 106 + 109 with eq 102.
                         IF (Y_DROP <= Y_GAS) THEN
                            NUSSELT  = 2._EB + NU_FAC_GAS*SQRT(RE_L)
                            H_HEAT   = NUSSELT*K_AIR/LENGTH
-                           H_MASS = 0._EB
+                           H_MASS   = 0._EB
                         ELSE
-                           SHERWOOD  = 2._EB + NU_FAC_GAS*SQRT(RE_L)*LOG(1._EB+B_NUMBER)/(Y_DROP-Y_GAS)
-                           H_MASS = SHERWOOD*D_AIR/LENGTH
-                           LEWIS = K_AIR / (RHO_AIR * D_AIR * CP_AIR)
+                           SHERWOOD = ( 2._EB + SH_FAC_GAS*SQRT(RE_L) )*LOG(1._EB+B_NUMBER)/(Y_DROP-Y_GAS)
+                           H_MASS   = SHERWOOD*D_AIR/LENGTH
+                           LEWIS    = K_AIR / (RHO_AIR * D_AIR * CP_AIR)
                            ZZ_GET(1:N_TRACKED_SPECIES) = 0._EB
                            ZZ_GET(Z_INDEX) = 1._EB
                            CALL GET_SPECIFIC_HEAT(ZZ_AIR,C_GAS_DROP,TMP_FILM)
@@ -2519,18 +2532,18 @@ SPECIES_LOOP: DO Z_INDEX = 1,N_TRACKED_SPECIES
                            CALL GET_SPECIFIC_HEAT(ZZ_AIR,C_GAS_AIR,TMP_FILM)
                            THETA = C_GAS_DROP/C_GAS_AIR/LEWIS
                            B_NUMBER = (1._EB+B_NUMBER)**THETA-1._EB
-                           NUSSELT  = 2._EB + NU_FAC_GAS*SQRT(RE_L)*LOG(1._EB+B_NUMBER)/B_NUMBER
+                           NUSSELT  = ( 2._EB + NU_FAC_GAS*SQRT(RE_L) )*LOG(1._EB+B_NUMBER)/B_NUMBER
                            H_HEAT   = NUSSELT*K_AIR/LENGTH
                         ENDIF
-                     CASE(2) ! Shazin M2, Eq 116 and 117 with eq 106,109, and 102.
+                     CASE(2) ! Sazhin M2, Eq 116 and 117 with eq 106, 109, and 102.
                         IF (Y_DROP <= Y_GAS) THEN
                            NUSSELT  = 2._EB + NU_FAC_GAS*SQRT(RE_L)
                            H_HEAT   = NUSSELT*K_AIR/LENGTH
-                           H_MASS = 0._EB
+                           H_MASS   = 0._EB
                         ELSE
-                           SHERWOOD  = 2._EB + NU_FAC_GAS*SQRT(RE_L)*LOG(1._EB+B_NUMBER)/((Y_DROP-Y_GAS)*F_B(B_NUMBER))
-                           H_MASS = SHERWOOD*D_AIR/LENGTH
-                           LEWIS = K_AIR / (RHO_AIR * D_AIR * CP_AIR)
+                           SHERWOOD = ( 2._EB + SH_FAC_GAS*SQRT(RE_L) )*LOG(1._EB+B_NUMBER)/((Y_DROP-Y_GAS)*F_B(B_NUMBER))
+                           H_MASS   = SHERWOOD*D_AIR/LENGTH
+                           LEWIS    = K_AIR / (RHO_AIR * D_AIR * CP_AIR)
                            ZZ_GET(1:N_TRACKED_SPECIES) = 0._EB
                            ZZ_GET(Z_INDEX) = 1._EB
                            CALL GET_SPECIFIC_HEAT(ZZ_AIR,C_GAS_DROP,TMP_FILM)
@@ -2538,7 +2551,7 @@ SPECIES_LOOP: DO Z_INDEX = 1,N_TRACKED_SPECIES
                            CALL GET_SPECIFIC_HEAT(ZZ_AIR,C_GAS_AIR,TMP_FILM)
                            THETA = C_GAS_DROP/C_GAS_AIR/LEWIS
                            B_NUMBER = (1._EB+B_NUMBER)**THETA-1._EB
-                           NUSSELT  = 2._EB + NU_FAC_GAS*SQRT(RE_L)*LOG(1._EB+B_NUMBER)/(B_NUMBER*F_B(B_NUMBER))
+                           NUSSELT  = ( 2._EB + NU_FAC_GAS*SQRT(RE_L) )*LOG(1._EB+B_NUMBER)/(B_NUMBER*F_B(B_NUMBER))
                            H_HEAT   = NUSSELT*K_AIR/LENGTH
                         ENDIF
                   END SELECT
@@ -2875,7 +2888,7 @@ SUM_PART_QUANTITIES: IF (N_LP_ARRAY_INDICES > 0) THEN
             SF => SURFACE(LPC%SURF_INDEX)
             R_DROP = MAXVAL(LP%ONE_D%X(0:SF%N_CELLS_MAX))
             SELECT CASE(SF%GEOMETRY)
-               CASE(SURF_CARTESIAN)
+               CASE(SURF_CARTESIAN,SURF_BLOWING_PLATE)
                   A_DROP = 2._EB*SF%LENGTH*SF%WIDTH
                CASE(SURF_CYLINDRICAL)
                   A_DROP = 2._EB*SF%LENGTH*R_DROP

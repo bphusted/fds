@@ -12,6 +12,7 @@ cd Bryant_Doorway; ./Run_All.sh $OPTIONS; cd ..
 cd CAROLFIRE; ./Run_All.sh $OPTIONS; cd ..
 cd CHRISTIFIRE; ./Run_All.sh $OPTIONS; cd ..
 cd Cup_Burner; ./Run_All.sh $OPTIONS; cd ..
+cd Droplet_Evaporation; ./Run_All.sh $OPTIONS; cd ..
 cd FAA_Polymers; ./Run_All.sh $OPTIONS; cd ..
 cd Fleury_Heat_Flux; ./Run_All.sh $OPTIONS; cd ..
 cd FM_Parallel_Panels; ./Run_All.sh $OPTIONS; cd ..
@@ -32,6 +33,7 @@ cd Steckler_Compartment; ./Run_All.sh $OPTIONS; cd ..
 cd UL_NIST_Vents; ./Run_All.sh $OPTIONS; cd ..
 cd Ulster_SBI; ./Run_All.sh $OPTIONS; cd ..
 cd UMD_Polymers; ./Run_All.sh $OPTIONS; cd ..
+cd UMD_Burning_Rate_Emulator; ./Run_All.sh $OPTIONS; cd ..
 cd USCG_HAI; ./Run_All.sh $OPTIONS; cd ..
 cd Vegetation; ./Run_All.sh $OPTIONS; cd ..
 cd Vettori_Flat_Ceiling; ./Run_All.sh $OPTIONS; cd ..

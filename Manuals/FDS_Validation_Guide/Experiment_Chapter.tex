@@ -239,6 +239,20 @@ Petra Andersson and Patrick Van Hees of the Swedish National Testing and Researc
 \end{enumerate}
 
 
+
+\section{Crown Fires}
+\label{Crown_Fires_Description}
+
+The term ``crown fire'' refers to a wildfire that spreads from the ground surface into the tree canopy. Alexander and Cruz~\cite{Alexander:CJFR2006} compiled a data set of 57 crown fires that occurred in the U.S. and Canada between 1965 and 2003. For each fire, the relative humidity, ambient temperature, and dominant vegetation type are reported, along with estimated values for the vegetation moisture content, crown bulk density (CBD), and open 10~m wind speed. The vegetation consists mainly of coniferous trees, like pines and spruces, and dry undergrowth and ground cover, i.e. scrub brush and dry pine needles. The reported relative humidity ranges between 5~\% and 50~\%, the estimated moisture content ranges between 5~\% and 10~\%, the estimated CBD ranges between 0.1~kg/m$^3$ and 0.2~kg/m$^3$, the estimated wind speed ranges between 10~km/h and 50~km/h, and the observed rate of spread ranges between 10~m/min and 110~m/min.
+
+\subsubsection{Modeling Notes}
+
+It is not possible to compare directly the model simulations with the observed fires because of lack of information about the number, spacing, and height of the trees; and the depth, mass, and composition of the ground cover. Instead, Ziegler~et~al.~\cite{Ziegler:thesis,Ziegler:FEM2017,Ziegler:Data2019,Hoffman:FT2016} developed tree maps based on various forests found in the western region of the U.S. The maps contain the location and rough dimensions of each tree in a 4~ha area. Eight maps were developed based on four specific locations and pre- or post-treated conditions. In addition, Ziegler~et~al. suggest that the moisture content of the trees is approximately 100~\%, and the ground cover 5~\%. The simulated fires are ignited along a strip, and the rate of spread is calculated based on the position of peak temperature.
+
+The simulations are performed with a numerical grid that has a resolution of 1~m by 1~m by 0.5~m near the ground, and the vertical dimension increases gradually with height. Because of this relatively coarse resolution, the burning rate of the vegetation is limited to ensure that any given patch of surface vegetation or volume of canopy vegetation cannot burn completely in less than 30~s.
+
+
+
 \section{CSIRO Grassland Fires}
 \label{CSIRO_Grassland_Fires_Description}
 
@@ -395,6 +409,36 @@ The single level structure was instrumented with five bare-bead thermocouple arr
 \caption[Instrumentation of the two level DelCo training structure]{Instrumentation of the second floor (top) and first floor (bottom) of the two level DelCo training structure. The thermocouple arrays are denoted by crossed circles and the gas sampling measurement locations are denoted by hexagons at locations A1 and A10. The burner is denoted by three cross-hatched squares.}
 \label{fig:west_instrumentation}
 \end{figure}
+
+\section{Droplet Evaporation}
+\label{Droplet_Evaporation_Description}
+
+Five sets of experiments have been selected for validation of the evaporation of liquid droplets.
+
+\subsubsection{Fujita, Kurose, and Komori Experiments}
+\label{Fujita_exp}
+
+Fujita, Kurose, and Komori performed a series of experiments that suspended a water drop in a heated, vertical wind tunnel~\cite{Fujita}. Four experiments were modeled with relative humidity values of 0~\% and 30~\% and droplet Reynolds numbers of 60 and 150 (approximately 0.8~m/s and 2.0~m/s). Droplet size and surface temperature were recorded as functions of time.
+
+\subsubsection{Gavin Experiments}
+\label{Gavin_exp}
+
+Gavin performed two experiments of a single water drop falling in dry air~\cite{Gavin}. The test apparatus was a vertical wind tunnel. A drop was injected into the wind tunnel and the vertical air stream velocity was changed over time to maintain the drop at a constant elevation in the wind tunnel. The first droplet was 769~$\mu$m with an initial temperature of 23.0~$^\circ$C. The second droplet was 557~$\mu$m with an initial temperature of 24.3~$^\circ$C.
+
+\subsubsection{Kolaitis and Founti Experiments}
+\label{Kolaitis_exp}
+
+Kolaitis and Founti measured the diameter and temperature of suspended liquid fuel droplets in a heated air stream~\cite{Kolaitis}. Four experiments were chosen: a 1.26~mm droplet of ethanol at an initial temperature of 34.2~$^\circ$C in 94~$^\circ$C quiescent air, a 1.13~mm droplet of decane at an initial temperature of 73.8~$^\circ$C in 94~$^\circ$C quiescent air, a 1.15~mm droplet of heptane at an initial temperature of 49.0~$^\circ$C in 94~$^\circ$C quiescent air, and a 1.42~mm droplet of heptane at an initial temperature of 15.5~$^\circ$C in 94~$^\circ$C air at 0.146~m/s.
+
+\subsubsection{Maqua, Castanet, and Lemoine Experiments}
+\label{Maqua_exp}
+
+Maqua, Castanet, and Lemoine measured the temperature of falling droplets of ethanol and acetone mixtures in a heated plume~\cite{Maqua}. Because the temperature and velocity of the plume was not well-characterized, only the experiments involving a droplet falling in quiescent air were modeled. As FDS does not currently have a sub-model for the evaporation of a multi-component fuel, only the experiments for a pure ethanol droplet (140~$\mu$m) and a pure acetone droplet (140~$\mu$m) were modeled. The initial droplet temperature in both experiments was 45~$^\circ$C in 20~$^\circ$C air.
+
+\subsubsection{Taflin Experiments}
+\label{Taflin_exp}
+
+Taflin measured the diameter of suspended water droplets in dry air~\cite{Snegirev:1}. One droplet was initially 43.9~$\mu$m and the other was 56.6~$\mu$m.
 
 \section{FAA Cargo Compartments}
 \label{FAA_Cargo_Description}
@@ -848,7 +892,7 @@ In 2009, Mell et~al. measured the burning rate of individual Douglas fir trees o
 
 \subsubsection{Modeling Notes}
 
-The trees are modeled as a collection of cylindrical Lagrangian particles. Mell~et~al.~\cite{Mell:2009} group the particles into three size classes. The pyrolysis model assigned to the particles is described in the FDS User's Guide~\cite{FDS_Users_Guide}, chapter ``Earth, Wind and Fire,'' section ``Thermal Degradation Model for Vegetation.'' 
+The trees are modeled as a collection of cylindrical Lagrangian particles. Mell~et~al.~\cite{Mell:2009} group the particles into three size classes. The pyrolysis model assigned to the particles is described in the FDS User's Guide~\cite{FDS_Users_Guide}, chapter ``Earth, Wind and Fire,'' section ``Thermal Degradation Model for Vegetation.''
 
 Measured properties of the trees are listed in Table~\ref{Properties_Trees}. Generic vegetation properties are listed in Table~\ref{Assumed_Properties_Trees}. These assumed properties are typically for wood or cellulosic fuels. The moisture is modeled as water. The vegetation is assumed to be composed primarily of cellulose. Reference~\cite{Mell:2009} provides an estimate of the distribution of mass for the foliage, roundwood less than 3~mm in diameter, roundwood 3~mm to 6~mm, and roundwood 6~mm to 10~mm. For the 2~m trees, the distribution is approximately 64~\%, 11~\%, 10~\%, and 15~\%, respectively. For the 5~m trees, it is 60~\%, 17~\%, 12~\%, and 11~\%, respectively.
 
@@ -1227,7 +1271,7 @@ Sung et al.~\cite{Sung:TN2019} made mean and rms centerline and radial gas tempe
 
 \subsubsection{Gas Species Measurements}
 
-Falkenstein-Smith et al. measured the time-averaged centerline species concentrations within the flaming region of three liquid fuel fires---acetone, ethanol, and methanol~\cite{Falkenstein-Smith:2019}. The measurements were made using a gas chromatograph/mass spectrometer system (GC/MSD). The volume fraction of each species was calculated via the number of moles identified by the GC/MSD at each centerline point. Soot mass fractions were measured during the gas sampling process.
+Falkenstein-Smith et al. measured the time-averaged centerline species concentrations within the flaming region of three liquid fuel fires---acetone, ethanol, and methanol~\cite{Falkenstein-Smith:2019}. The measurements were made using a gas chromatograph/mass spectrometer system (GC/MSD). The volume fraction of each species was calculated via the number of moles identified by the GC/MSD at each centerline point. Soot mass fractions were measured during the gas sampling process. Similar measurements were made for a 37~cm diameter methane burner with a measured fuel flow rate of 0.69~g/s and an estimated HRR of 34.5~kW.
 
 \subsubsection{Heat Flux Measurements}
 
@@ -1565,7 +1609,78 @@ A second series of experiments involving plate thermometers was carried out in 2
 
 A third series of experiments involving plate thermometers was conducted in 2015~\cite{Sjostrom:SP2016}. A simple compartment with a single door was constructed and instrumented primarily with plate thermometers. The compartment was 2.7~m long, 1.8~m wide, and 1.8~m tall, with a 0.6~m by 1.5~m door centered on one of the short walls. The PTs were affixed to the walls. The 12 experiments were conducted with four different wall linings. In Series~A, the compartment was lined with a 10~cm thick light concrete block. In Series~B, the compartment was lined with a 5~cm thick layer of insulation backed by a 3~mm thick plate of steel. In Series~C, the compartment was lined with an uninsulated 3~mm thick steel plate. In Series~D, the compartment was lined with a 3~mm thick steel plate backed by a 5~cm thick layer of insulation (the opposite of Series~B). The fires were fueled by a 0.3~m by 0.3~m propane burner located in the center of the room except for Test~A3, where it was centered on the back wall. For most of the experiments, the heat release rate was 1000~kW, except for A2 and C1, which were 500~kW, and A4 and C3, which employed linear ramp-ups to 1250~kW.
 
-\FloatBarrier
+
+\section{SP Wood Crib Experiments}
+\label{SP_Wood_Cribs_Description}
+
+Hansen and Ingason burned piles of reduced-scale wood pallets in a reduced-scale wind tunnel to develop a simple model that predicts the heat release rate of multiple objects separated by varying distances~\cite{Hansen:2010,Hansen:FSJ2012}. The tunnel was 10~m long with a rectangular cross section 0.6~m wide by 0.4~m tall. Four piles of 1:4 scale pallets were placed at various positions in the tunnel. Each pile of 5 pallets was 0.3~m long, 0.2~m wide and 0.18~m tall. The fire was ignited on the windward side of the upwind pile with a 3~cm by 3~cm by 2.4~cm block of fiberboard soaked in 9~mL of heptane. The HRR was measured, along with temperature, heat flux, and oxygen concentration at various locations.
+
+\subsubsection{Modeling Notes}
+
+The piles of pallets are modeled as an array of Lagrangian particles in lieu of solid obstructions so that a relatively coarse grid of 4~cm can be used. The simulations have previously been performed with partially resolved obstructions~\cite{Janardhan:FT2019}, but such simulations cannot be performed on relatively coarse grids.
+
+The modeling strategy is very similar to that used for vegetation in wildfire simulations. The wood planks are characterized as a homogenous collection of flat disks with a surface area to volume ratio $\sigma=460$~m$^{-1}$ and a packing ratio $\beta=0.42$. The packing ratio is the bulk crib mass per unit volume divided by the density of the wood, $m'''/\rho_{\rm wood}$. The average mass of a pile of pallets is 1.7~kg.
+
+The radiation absorption coefficient is taken as $\kappa=C_{\rm s} \sigma \beta$, where the shape factor, or ratio of plate surface area to projected area, is $C_{\rm s}=0.25$. The absorption coefficient, $\kappa$, also appears in the formula for wind drag, where the pressure drop, $\Delta p$, over a distance, $L$, is given by $\Delta p / L = 0.5 \rho C_{\rm d} \kappa u^2$. The drag coefficient, $C_{\rm d}=2.8$, was measured by Falkenstein-Smith~et~al.~\cite{Falkenstein-Smith:2018} in a study of vegetation. Its application to wood cribs has not been validated.
+
+The wood is assumed to pyrolyze, forming C$_{3.4}$H$_{6.2}$O$_{2.5}$~\cite{Ritchie:1}, according to the following reaction scheme:
+\begin{eqnarray}
+ {\rm Wet\ Wood} & \rightarrow & \frac{M}{1+M} \, {\rm H_2O} + \frac{1}{1+M} \, {\rm Dry\ Wood} \\[.1in]
+ {\rm Dry\ Wood} & \rightarrow & \chi_{\rm char} \, {\rm Char} + (1-\chi_{\rm char}) \, {\rm Fuel\ Gas} \\[.1in]
+ {\rm Char} + \nu_{\rm O_2, char} \, {\rm O_2} & \rightarrow & (1+ \nu_{\rm O_2,char} - \chi_{\rm ash}) \, {\rm CO_2} + \chi_{\rm ash} \, {\rm Ash} 
+\end{eqnarray}
+The reaction rates are given by:
+\begin{eqnarray}
+  r_{\rm H_2O} &=& \left( \frac{\rho_{\rm s,H_2O}}{\rho_{\rm s,0}} \right)        \, A_{\rm H_2O} \, T^{-\frac{1}{2}} \exp \left(  -\frac{E_{\rm H_2O}}{R \, T} \right) \label{r_H2O} \\[.1in]
+  r_{\rm wood} &=& \left( \frac{\rho_{\rm s,wood}}{\rho_{\rm s,0}} \right)^{1.69} \, A_{\rm wood} \,                  \exp \left(  -\frac{E_{\rm wood}}{R \, T} \right)   \\[.1in]
+  r_{\rm char} &=& \left( \frac{\rho_{\rm s,char}}{\rho_{\rm s,0}} \right)^0      \, A_{\rm char} \,                  \exp \left(  -\frac{E_{\rm char}}{R \, T} \right) \,
+  \frac{ \rho \, Y_{\rm O_2} \, \sigma \, \left( 1+\beta_{\rm char}\sqrt{\RE} \right) }{\nu_{\rm O_2,char} \, \rho_{\rm s,0} } \label{r_char}
+\end{eqnarray}
+The equation governing the temperature of the solid is
+\be
+\rho_{\rm s} \, c \, \frac{\partial T}{\partial t} = -\rho_{\rm s,0} \left( \Delta{h_{\rm H_2O}}\ r_{\rm H_2O} + \Delta {h_{\rm wood}}\ r_{\rm wood} +  \Delta{h_{\rm char}}\ r_{\rm char} \right) + \nabla \cdot{\mathbf{\dot{q}}}''_{\rm c}  +  \nabla \cdot{\mathbf{\dot{q}}}''_{\rm r}
+\ee
+The parameters for the pyrolysis model are listed in Table~\ref{Pine_Properties}.
+
+\begin{table}[p]
+\caption[Parameters for SP Wood Cribs simulations]{Parameters for SP Wood Cribs simulations.}
+\begin{center}
+\begin{tabular}{|l|c|c|l|}
+\hline
+Property                &      Units    &      Value                         & Reference                      \\ \hline \hline 
+$M$                     &               & 0.016                              & \cite{Hansen:2010}             \\ \hline
+$\rho_{\rm H_2O}$       &     kg/m$^3$  & 1000                               & \cite{Porterie:2000PhysFluids} \\ \hline
+$c_{\rm H_2O}$          &    kJ/kg/K    & 4.184                              & \cite{Porterie:2000PhysFluids} \\ \hline
+$k_{\rm H_2O}$          &      W/m/K    & 0.62                               & \cite{Porterie:2000PhysFluids} \\ \hline
+$A_{\rm H_2O}$          & $\sqrt{K}$/s  & 600000                             & \cite{Porterie:2000PhysFluids} \\ \hline
+$E_{\rm H_2O}$          & J/mol         & 48200                              & \cite{Porterie:2000PhysFluids} \\ \hline
+$\Delta h_{\rm H_2O}$   & kJ/kg         & 2259                               & \cite{Porterie:2000PhysFluids} \\ \hline \hline
+$\rho_{\rm wood}$       &     kg/m$^3$  & 370                                &                                \\ \hline
+$c_{\rm wood}$          &    kJ/kg/K    & $0.90+0.00235(T-20)$               &                                \\ \hline
+$k_{\rm wood}$          &      W/m/K    & $0.10+0.00035(T-20)$               &                                \\ \hline
+$\epsilon_{\rm wood}$   &               & 0.95                               & \cite{Ritchie:1}               \\ \hline
+$A_{\rm wood}$          & s$^{-1}$      & 141300                             &                                \\ \hline
+$E_{\rm wood}$          & J/mol         & 90730                              &                                \\ \hline
+$\Delta h_{\rm wood}$   & kJ/kg         & 250                                &                                \\ \hline \hline
+$\rho_{\rm char}$       &     kg/m$^3$  & 135                                &                                \\ \hline
+$c_{\rm char}$          &    kJ/kg/K    & $0.80+0.00615(T-20)$               &                                \\ \hline
+$k_{\rm char}$          &      W/m/K    & $0.11+0.000308(T-20)$              &                                \\ \hline
+$\epsilon_{\rm char}$   &               & 1.0                                & Assumption                     \\ \hline
+$A_{\rm char}$          & s$^{-1}$      & 430                                & \cite{Porterie:2000PhysFluids} \\ \hline
+$E_{\rm char}$          & J/mol         & 74800                              & \cite{Porterie:2000PhysFluids} \\ \hline
+$\chi_{\rm char}$       & g/g           & 0.20                               & Assumption                     \\ \hline
+$\beta_{\rm char}$      &               & 0.20                               & \cite{Porterie:2006}           \\ \hline
+$\nu_{\rm O_2, char}$   & g/g           & 1.65                               & \cite{Porterie:2006}           \\ \hline
+$\Delta h_{\rm char}$   & kJ/kg         & -32800                             & \cite{SFPE}                    \\ \hline \hline
+$\chi_{\rm ash}$        & g/g           & 0.02                               & Assumption                     \\ \hline
+$\rho_{\rm ash}$        &     kg/m$^3$  & 67                                 & Assumption                     \\ \hline
+$c_{\rm ash}$           &    kJ/kg/K    & 2.0                                & Assumption                     \\ \hline
+$k_{\rm char}$          &      W/m/K    & 0.1                                & Assumption                     \\ \hline \hline
+$\Delta h$              &      kJ/kg    & 18100                              & \cite{Hansen:2010}             \\ \hline
+\end{tabular}
+\end{center}
+\label{Pine_Properties}
+\end{table}
 
 
 \section{Steckler Compartment Experiments}
@@ -2176,7 +2291,7 @@ Perez-Ramirez et al.~at the University of Corsica, France, and Mell at the U.S. 
 
 The pine needles are modeled as a collection of cylindrical Lagrangian particles. The pyrolysis model assigned to the particles is described in the FDS User's Guide~\cite{FDS_Users_Guide}, chapter ``Earth, Wind and Fire,'' section ``Thermal Degradation Model for Vegetation.''
 
-The test parameters are given in Table~\ref{Corsica_Parameters}. 
+The test parameters are given in Table~\ref{Corsica_Parameters}.
 
 \begin{table}[ht!]
 \begin{center}
@@ -2438,6 +2553,7 @@ Table~\ref{Test_Parameters} presents a summary of all the experiments described 
 Arup Tunnel         & 5344          & 1.6           & 7     & 1.5               & 0.8                 & 0.0           & 1.1         & 43          & 0.0 -- 1.1            & N/A                   \\ \hline
 ATF Corridors       & 50 -- 500     & 0.5           & 2.4   & 0.3 -- 3.3        & 0.3 -- 0.9          & 0.0 -- 0.1    & 0.8         & 7.1         & 0.8 -- 6.0            & N/A                   \\ \hline
 Beyler Hood         & 8 -- 30       & 0.2           & 0.5   & 0.5 -- 1.1        & 0.7 -- 1.3          & 0.2 -- 1.7    & 2.0         & 2.0         & N/A                   & N/A                   \\ \hline
+Bittern Sprinklers  & 150           & 0.5           & 2.4   & 0.8               & 0.5                 & 0.04          & 1.7         & 3.3         & 0.8                   & N/A                   \\ \hline
 Bryant Doorway      & 34 -- 511     & 0.3           & 2.4   & 0.5 -- 6.9        & 0.2 -- 1.0          & 0.0 -- 0.2    & 1.0         & 2.1         & 0.6 -- 0.8            & N/A                   \\ \hline
 DelCo Trainers      & 440 -- 1190   & 0.7 -- 1.2    & 2.4   & 0.7 -- 1.0        & 0.8 -- 1.1          & 0.1 -- 0.3    & 1.5         & 2.5         & 0.4 -- 3.8            & N/A                   \\ \hline
 FAA Cargo           & 5             & 0.1           & 1.4   & 1.4               & 0.2                 & 0.2           & 2.3         & 4.8         & 0.1 -- 4.8            & N/A                   \\ \hline
@@ -2450,6 +2566,7 @@ Heskestad           & $10^2-10^7$   & 1.1           & Open  & $10^{-1}-10^4$    
 LLNL Enclosure      & 50 -- 400     & 0.6           & 4.5   & 0.2 -- 1.5        & 0.1 -- 0.4          & 0.1 -- 0.4    & 0.9         & 1.3         & 0.3 -- 1.0            & N/A                   \\ \hline
 McCaffrey Plume     & 14 -- 57      & 0.3           & Open  & 0.2 -- 0.8        & Open                & Open          & Open        & Open        & N/A                   & N/A                   \\ \hline
 NBS Multi-Room      & 110           & 0.3           & 2.4   & 1.5               & 0.5                 & 0.0           & 1.0         & 5.1         & N/A                   & N/A                   \\ \hline
+NIST Composite Beam & 4000          & 1.4           & 3.7   & 0.5               & 0.7                 & 0.6           & 0.5         & 3.5         & N/A                   & N/A                   \\ \hline
 NIST FSE            & 100 -- 2500   & 0.6 -- 1.1    & 2.4   & 0.5 -- 1.8        & 0.4 -- 1.7          & 0.2 -- 5.9    & 1.0         & 1.5         & 0.4 -- 0.8            & N/A                   \\ \hline
 NIST/NRC            & 350 -- 2200   & 1.0           & 3.8   & 0.3 -- 2.0        & 0.3 -- 1.0          & 0.0 -- 0.3    & 1.9         & 5.7         & 0.3 -- 2.1            & 2.0 -- 4.0            \\ \hline
 NIST/NRC Cabinet    & 200 -- 400    & 0.3 -- 0.5    & 2.1   & 0.3 -- 3.7        & 0.2 -- 0.9          & 1.3 -- 12     & 0.3         & 0.4         & N/A                   & 1.2 -- 2.0            \\ \hline
