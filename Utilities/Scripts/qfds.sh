@@ -1,14 +1,10 @@
 #!/bin/bash
 
 #*** environment varables
-# RESOURCE_MANAGER - SLURM or TORQUE (default TORQUE)
 
 #*** environment variables used by the bots
-# JOBPREFIX        - prefix job title with $JOBPREFIX eg. FB_ or  SB_
 # BACKGROUND_PROG  - defines location of background program
 #                    ( if the 'none' queue is also specified)
-# SCRIPTFILES      - outputs the name of the script file to $SCRIPTFILES
-#                    ( used to kill jobs )
 
 # ---------------------------- stop_fds_if_requested ----------------------------------
 
@@ -111,22 +107,25 @@ function usage {
   echo "    [default: $FDSROOT]"
   echo " -i use installed fds"
   echo " -I use Intel MPI version of fds"
+  echo " -j prefix - specify a job prefix"
   echo " -L use Open MPI version of fds"
   echo " -m m - reserve m processes per node [default: 1]"
   echo " -M   -  add --mca plm_rsh_agent /usr/bin/ssh to mpirun command "
   echo " -n n - number of MPI processes per node [default: 1]"
+  echo " -N   - run as many MPI processes on a node as possible"
+  echo "        MIN ( number of cores, number of mpi processes)"
   echo " -O n - run cases casea.fds, caseb.fds, ... using 1, ..., N OpenMP threads"
   echo "        where case is specified on the command line. N can be at most 9."
   echo " -s   - stop job"
   echo " -S   - use startup files to set the environment, do not load modules"
   echo " -r   - append trace flag to the mpiexec call generated"
-  echo " -R   - select resource manager. Currently only responds to input 'SLURM', with default TORQUE, but allows for future expansion"
   echo " -t   - used for timing studies, run a job alone on a node (reserving $NCORES_COMPUTENODE cores)"
   echo " -T type - run dv (development), db (debug), inspect, advise, or vtune version of fds"
   echo "           if -T is not specified then the release version of fds is used"
   echo " -V   - show command line used to invoke qfds.sh"
   echo " -w time - walltime, where time is hh:mm for PBS and dd-hh:mm:ss for SLURM. [default: $walltime]"
   echo ""
+  echo " Resource manager: $RESOURCE_MANAGER"
   exit
 }
 
@@ -146,13 +145,17 @@ if [ "$FIREMODELS" != "" ]; then
   FDSROOT=$FIREMODELS
 fi
 
-#*** define resource manager that is used
-
-
-
 #*** determine platform
 
 platform="linux"
+if [ "$WINDIR" != "" ]; then
+  platform="win"
+  if [ "$I_MPI_ROOT" != "" ]; then
+    echo $I_MPI_ROOT | sed 's/\\/\//g' -  | sed 's/C:/\/C/g' -  > var.out.$$
+    I_MPI_ROOT=`head -1 var.out.$$`
+    rm var.out.$$
+  fi
+fi
 if [ "`uname`" == "Darwin" ] ; then
   platform="osx"
 fi
@@ -163,7 +166,11 @@ if [ "$platform" == "osx" ]; then
   queue=none
   ncores=`system_profiler SPHardwareDataType|grep Cores|awk -F' ' '{print $5}'`
 else
-  queue=batch
+  if [ "$platform" == "win" ]; then
+    queue=terminal
+  else
+    queue=batch
+  fi
   ncores=`grep processor /proc/cpuinfo | wc -l`
 fi
 if [ "$NCORES_COMPUTENODE" == "" ]; then
@@ -190,7 +197,7 @@ if [ "$MPIRUN_MCA" != "" ]; then
 fi
 
 n_mpi_processes=1
-n_mpi_processes_per_node=-1
+n_mpi_processes_per_node=1
 if [ "$platform" == "linux" ]; then
 max_processes_per_node=`cat /proc/cpuinfo | grep cores | wc -l`
 else
@@ -210,7 +217,34 @@ iinspectargs=
 vtuneresdir=
 vtuneargs=
 use_config=""
-RESOURCE_MANAGER="TORQUE"
+
+# determine which resource manager is running (or none)
+
+STATUS_FILE=status_file.$$
+srun -V >& $STATUS_FILE
+missing_slurm=`cat $STATUS_FILE | tail -1 | grep "not found" | wc -l`
+rm -f $STATUS_FILE
+
+RESOURCE_MANAGER="NONE"
+if [ $missing_slurm -eq 0 ]; then
+  RESOURCE_MANAGER="SLURM"
+else
+  echo | qmgr -n >& $STATUS_FILE
+  missing_torque=`cat $STATUS_FILE | tail -1 | grep "not found" | wc -l`
+  rm -f $STATUS_FILE
+  if [ $missing_torque -eq 0 ]; then
+    RESOURCE_MANAGER="TORQUE"
+  fi
+fi
+if [ "$RESOURCE_MANAGER" == "SLURM" ]; then
+  if [ "$SLURM_MEM" != "" ]; then
+   SLURM_MEM="#SBATCH --mem=$SLURM_MEM"
+  fi
+  if [ "$SLURM_MEMPERCPU" != "" ]; then
+   SLURM_MEM="#SBATCH --mem-per-cpu=$SLURM_MEMPERCPU"
+  fi
+fi
+
 # the mac doesn't have Intel MPI
 if [ "`uname`" == "Darwin" ]; then
   use_intel_mpi=
@@ -220,6 +254,7 @@ benchmark=no
 showinput=0
 exe=
 STARTUP=
+SET_MPI_PROCESSES_PER_NODE=
 if [ "$QFDS_STARTUP" != "" ]; then
   STARTUP=$QFDS_STARTUP
 fi
@@ -242,7 +277,7 @@ commandline=`echo $* | sed 's/-V//' | sed 's/-v//'`
 
 #*** read in parameters from command line
 
-while getopts 'Aa:c:Cd:D:e:Ef:hHiILm:Mn:o:O:p:Pq:R:rsStT:vVw:x:' OPTION
+while getopts 'Aa:c:Cd:D:e:Ef:hHiIj:Lm:Mn:No:O:p:Pq:rsStT:vVw:x:' OPTION
 do
 case $OPTION  in
   A) # used by timing scripts to identify benchmark cases
@@ -288,6 +323,9 @@ case $OPTION  in
   I)
    use_intel_mpi=1
    ;;
+  j)
+   JOBPREFIX="$OPTARG"
+   ;;
   L)
    use_intel_mpi=
    ;;
@@ -300,6 +338,9 @@ case $OPTION  in
   n)
    n_mpi_processes_per_node="$OPTARG"
    ;;
+  N)
+   SET_MPI_PROCESSES_PER_NODE=1
+   ;;
   o)
    n_openmp_threads="$OPTARG"
    ;;
@@ -310,8 +351,10 @@ case $OPTION  in
    fi
    n_mpi_process=1
    benchmark="yes"
-   if [ "$NCORES_COMPUTENODE" != "" ]; then
-     n_mpi_processes_per_node="$NCORES_COMPUTENODE"
+   if [ "$RESOURCE_MANAGER" == "TORQUE" ]; then
+     if [ "$NCORES_COMPUTENODE" != "" ]; then
+       n_mpi_processes_per_node="$NCORES_COMPUTENODE"
+     fi
    fi
    ;;
   p)
@@ -322,26 +365,17 @@ case $OPTION  in
    OPENMPTEST="1"
    benchmark="yes"
    n_mpi_process=1
-   if [ "$NCORES_COMPUTENODE" != "" ]; then
-     n_mpi_processes_per_node="$NCORES_COMPUTENODE"
-   fi
+   if [ "$RESOURCE_MANAGER" == "TORQUE" ]; then
+     if [ "$NCORES_COMPUTENODE" != "" ]; then
+       n_mpi_processes_per_node="$NCORES_COMPUTENODE"
+     fi
+   fi  
    ;;
   q)
    queue="$OPTARG"
    ;;
   r)
    trace="-trace"
-   ;;
-  R)
-   RESOURCE_MANAGER="$OPTARG"
-   if [ "$RESOURCE_MANAGER" == "SLURM" ]; then
-     if [ "$SLURM_MEM" != "" ]; then
-      SLURM_MEM="#SBATCH --mem=$SLURM_MEM"
-     fi
-     if [ "$SLURM_MEMPERCPU" != "" ]; then
-      SLURM_MEM="#SBATCH --mem-per-cpu=$SLURM_MEMPERCPU"
-     fi
-   fi
    ;;
   s)
    stopjob=1
@@ -351,8 +385,10 @@ case $OPTION  in
    ;;
   t)
    benchmark="yes"
-   if [ "$NCORES_COMPUTENODE" != "" ]; then
-     n_mpi_processes_per_node="$NCORES_COMPUTENODE"
+   if [ "$RESOURCE_MANAGER" == "TORQUE" ]; then
+     if [ "$NCORES_COMPUTENODE" != "" ]; then
+       n_mpi_processes_per_node="$NCORES_COMPUTENODE"
+     fi
    fi
    ;;
   T)
@@ -396,6 +432,13 @@ shift $(($OPTIND-1))
 if [ "$showcommandline" == "1" ]; then
   echo $0 $commandline
   exit
+fi
+
+if [ "$SET_MPI_PROCESSES_PER_NODE" == "1" ]; then
+   n_mpi_processes_per_node=$n_mpi_processes
+   if test $n_mpi_processes_per_node -gt $ncores ; then
+     n_mpi_processes_per_node=$ncores
+   fi
 fi
 
 #*** define input file
@@ -535,9 +578,6 @@ let "nodes=($n_mpi_processes-1)/$n_mpi_processes_per_node+1"
 if test $nodes -lt 1 ; then
   nodes=1
 fi
-if [ "$RESOURCE_MANAGER" == "SLURM" ]; then
-    nodes=""
-fi
 
 #*** define processes per node
 
@@ -587,9 +627,14 @@ if [ "$use_intel_mpi" == "1" ]; then
   if [ "$use_installed" == "1" ]; then
     MPIRUNEXE=$fdsdir/INTEL/mpi/intel64/bin/mpiexec
     if [ ! -e $MPIRUNEXE ]; then
-      echo "$MPIRUNEXE not found"
-      echo "Run aborted"
-      ABORT=y
+      MPIRUNEXE=$fdsdir/INTEL/bin/mpiexec
+      if [ ! -e $MPIRUNEXE ]; then
+        echo "Intel mpiexec not found at:"
+        echo "$fdsdir/INTEL/mpi/intel64/bin/mpiexec or"
+        echo "$fdsdir/bin/mpiexec"
+        echo "Run aborted"
+        ABORT=y
+      fi
     fi
   else
     if [ "$I_MPI_ROOT" == "" ]; then
@@ -597,11 +642,15 @@ if [ "$use_intel_mpi" == "1" ]; then
       ABORTRUN=y
     else
       MPIRUNEXE=$I_MPI_ROOT/intel64/bin/mpiexec
-      if [ ! -e $MPIRUNEXE ]; then
-        echo "Intel mpiexec, $MPIRUNEXE, not found at:"
-        echo "$MPIRUNEXE"
-        ABORTRUN=y
-        echo "Run aborted"
+      if [ ! -e "$MPIRUNEXE" ]; then
+        MPIRUNEXE="$I_MPI_ROOT/bin/mpiexec"
+        if [ ! -e "$MPIRUNEXE" ]; then
+          echo "Intel mpiexec not found at:"
+          echo "$I_MPI_ROOT/intel64/bin/mpiexec or"
+          echo "$I_MPI_ROOT/bin/mpiexec"
+          ABORTRUN=y
+          echo "Run aborted"
+        fi
       fi
     fi
   fi
@@ -636,6 +685,7 @@ fulldir=`pwd`
 
 outerr=$fulldir/$infile.err
 outlog=$fulldir/$infile.log
+qlog=$fulldir/$infile.qlog
 stopfile=$fulldir/$infile.stop
 scriptlog=$fulldir/$infile.slog
 in_full_file=$fulldir/$in
@@ -688,7 +738,6 @@ fi
 
 stop_fds_if_requested
 
-#QSUB="qsub -k eo -q $queue"
 QSUB="qsub -q $queue"
 
 #*** use the queue none and the program background on systems
@@ -710,11 +759,16 @@ if [ "$queue" == "none" ]; then
   USE_BACKGROUND=1
 else
 
+  if [ "$queue" == "terminal" ]; then
+    QSUB=
+    MPIRUN=
+  fi
+
 #*** setup for SLURM (alternative to torque)
 
   if [ "$RESOURCE_MANAGER" == "SLURM" ]; then
     QSUB="sbatch -p $queue --ignore-pbs"
-    MPIRUN='mpiexec'
+    MPIRUN="srun -N $nodes -n $n_mpi_processes --ntasks-per-node $n_mpi_processes_per_node"
   fi
 fi
 
@@ -744,8 +798,18 @@ if [ "$queue" != "none" ]; then
 #SBATCH -o $outlog
 #SBATCH -p $queue
 #SBATCH -n $n_mpi_processes
-####SBATCH --nodes=$nodes
+#SBATCH --nodes=$nodes
 #SBATCH --cpus-per-task=$n_openmp_threads
+#SBATCH --ntasks-per-node=$n_mpi_processes_per_node
+EOF
+
+if [ "$benchmark" == "yes" ]; then
+cat << EOF >> $scriptfile
+#SBATCH --exclusive
+EOF
+fi
+
+cat << EOF >> $scriptfile
 $SLURM_MEM
 EOF
     if [ "$walltimestring_slurm" != "" ]; then
@@ -849,6 +913,8 @@ fi
 cat << EOF >> $scriptfile
 echo "     Directory: \`pwd\`"
 echo "          Host: \`hostname\`"
+echo "----------------" >> $qlog
+echo "started running at \`date\`" >> $qlog
 EOF
 if [ "$OPENMPCASES" == "" ]; then
 if [ "$vtuneresdir" == "" ]; then
@@ -891,6 +957,9 @@ EOF
 fi
 done
 fi
+cat << EOF >> $scriptfile
+echo "finished running at \`date\`" >> $qlog
+EOF
 if [ "$queue" == "none" ]; then
 cat << EOF >> $scriptfile
 rm -f $scriptfile
@@ -906,22 +975,22 @@ if [ "$showinput" == "1" ]; then
 fi
 
 #*** output info to screen
-
+echo "submitted at `date`"                          > $qlog
 if [ "$queue" != "none" ]; then
 if [ "$OPENMPCASES" == "" ]; then
-  echo "         Input file:$in"
+  echo "         Input file:$in"             | tee -a $qlog
 else
-  echo "         Input files:"
+  echo "         Input files:"               | tee -a $qlog
 for i in `seq 1 $OPENMPCASES`; do
-  echo "            ${files[$i]}"
+  echo "            ${files[$i]}"            | tee -a $qlog
 done
 fi
-  echo "         Executable:$exe"
+  echo "         Executable:$exe"            | tee -a $qlog
   if [ "$OPENMPI_PATH" != "" ]; then
-    echo "            OpenMPI:$OPENMPI_PATH"
+    echo "            OpenMPI:$OPENMPI_PATH" | tee -a $qlog
   fi
   if [ "$use_intel_mpi" != "" ]; then
-    echo "           Intel MPI"
+    echo "           Intel MPI"              | tee -a $qlog
   fi
 
 #*** output currently loaded modules and modules when fds was built if the
@@ -931,35 +1000,37 @@ fi
   if [ "$FDS_MODULE_OPTION" == "" ]; then
     if [[ "$FDS_LOADED_MODULES" != "" ]] && [[ "$CURRENT_LOADED_MODULES" != "" ]]; then
       if [ "$FDS_LOADED_MODULES" != "$CURRENT_LOADED_MODULES" ]; then
-        echo "  Modules(when run):$CURRENT_LOADED_MODULES"
-        echo "Modules(when built):$FDS_LOADED_MODULES"
+        echo "  Modules(when run):$CURRENT_LOADED_MODULES" | tee -a $qlog
+        echo "Modules(when built):$FDS_LOADED_MODULES"     | tee -a $qlog
         MODULES_OUT=1
       fi
     fi
   fi
 
 #*** otherwise output modules used when fds is run
-
   if [[ "$MODULES" != "" ]] && [[ "$MODULES_OUT" == "" ]]; then
-    echo "            Modules:$MODULES"
+    echo "            Modules:$MODULES"                    | tee -a $qlog
   fi
-  echo "              Queue:$queue"
-  echo "              Nodes:$nodes"
-  echo "          Processes:$n_mpi_processes"
-  echo " Processes per node:$n_mpi_processes_per_node"
+  echo "   Resource Manager:$RESOURCE_MANAGER"             | tee -a $qlog
+  echo "              Queue:$queue"                        | tee -a $qlog
+  echo "              Nodes:$nodes"                        | tee -a $qlog
+  echo "          Processes:$n_mpi_processes"              | tee -a $qlog
+  echo " Processes per node:$n_mpi_processes_per_node"     | tee -a $qlog
   if test $n_openmp_threads -gt 1 ; then
-    echo "Threads per process:$n_openmp_threads"
+    echo "Threads per process:$n_openmp_threads"           | tee -a $qlog
   fi
 fi
 
 #*** run script
 
-chmod +x $scriptfile
-if [ "$SCRIPTFILES" != "" ]; then
-  echo $(basename "$scriptfile") >> $SCRIPTFILES
-fi
 $SLEEP
-$QSUB $scriptfile
+echo 
+chmod +x $scriptfile
+if [ "$queue" != "none" ]; then
+  $QSUB $scriptfile | tee -a $qlog
+else
+  $QSUB $scriptfile
+fi
 if [ "$queue" != "none" ]; then
   cat $scriptfile > $scriptlog
   echo "#$QSUB $scriptfile" >> $scriptlog

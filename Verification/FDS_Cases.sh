@@ -11,6 +11,7 @@ $QFDS -d Aerosols aerosol_gravitational_deposition_2.fds
 $QFDS -d Aerosols aerosol_thermophoretic_deposition.fds
 $QFDS -d Aerosols aerosol_thermophoretic_deposition_2.fds
 $QFDS -d Aerosols aerosol_turbulent_deposition.fds
+$QFDS -d Aerosols aerosol_scrubbing.fds
 $QFDS -d Aerosols propane_flame_deposition.fds
 $QFDS -d Aerosols propane_flame_deposition_gravitational.fds
 $QFDS -d Aerosols propane_flame_deposition_none.fds
@@ -21,9 +22,11 @@ $QFDS -d Aerosols soot_oxidation_wall.fds
 $QFDS -d Atmospheric_Effects lee_waves.fds
 $QFDS -d Atmospheric_Effects stack_effect.fds
 $QFDS -d Atmospheric_Effects lapse_rate.fds
-$QFDS -p 8 -d Atmospheric_Effects wind_example.fds
+$QFDS -p  8 -d Atmospheric_Effects wind_example.fds
+$QFDS -p 32 -n 8 -d Atmospheric_Effects wind_example_32.fds
 
-$QFDS -d Complex_Geometry geom_bad_intersection.fds
+$QFDS -d Complex_Geometry geom_extruded_poly.fds
+$QFDS -d Complex_Geometry geom_intersection.fds
 $QFDS -d Complex_Geometry geom_bad_inverted_normals.fds
 $QFDS -d Complex_Geometry geom_simple.fds
 #$QFDS -d Complex_Geometry geom_azim.fds
@@ -100,7 +103,7 @@ $QFDS -d Complex_Geometry geom_bad_inconsistent_normals.fds
 $QFDS -d Complex_Geometry geom_bad_non_manifold_edge.fds
 $QFDS -d Complex_Geometry geom_bad_non_manifold_vert.fds
 $QFDS -d Complex_Geometry geom_bad_open_surface.fds
-$QFDS -d Complex_Geometry geom_bad_self_intersection.fds
+$QFDS -d Complex_Geometry geom_self_intersection.fds
 
 $QFDS -d Complex_Geometry rotated_cube_0deg_32_exp.fds
 $QFDS -d Complex_Geometry rotated_cube_0deg_32_imp.fds
@@ -178,12 +181,14 @@ $QFDS -d Fires box_burn_away4.fds
 $QFDS -d Fires box_burn_away5.fds
 $QFDS -d Fires box_burn_away6.fds
 $QFDS -d Fires box_burn_away7.fds
+$QFDS -d Fires box_burn_away8.fds
 $QFDS -d Fires box_burn_away_2D.fds
 $QFDS -d Fires box_burn_away_2D_residue.fds
 $QFDS -d Fires box_burn_away1_pyro3d_vs_pyro1d.fds
 $QFDS -d Fires box_burn_away1_pyro3d_transport.fds
 $QFDS -d Fires couch.fds
 $QFDS -p 2 -d Fires couch2.fds
+$QFDS -d Fires fire_const_gamma.fds
 $QFDS -d Fires fire_whirl_pool.fds
 $QFDS -d Fires spray_burner.fds
 $QFDS -d Fires HoC_Ideal.fds
@@ -191,7 +196,8 @@ $QFDS -d Fires HoC_NonIdeal.fds
 $QFDS -d Fires tmp_lower_limit_simple.fds
 $QFDS -d Fires tmp_lower_limit_default.fds
 $QFDS -d Fires tmp_lower_limit_dt_p001.fds
-$QFDS -d Fires fire_const_gamma.fds
+$QFDS -d Fires tunnel_const_gamma.fds
+$QFDS -d Fires tunnel_linear_cp.fds
 $QFDS -p 8 -d Fires circular_burner.fds
 
 $QFDS -d Flowfields divergence_test_1.fds
@@ -316,8 +322,10 @@ $QFDS -d HVAC HVAC_mass_transport_conv_0320.fds
 $QFDS -d HVAC HVAC_mass_transport_energy.fds
 $QFDS -d HVAC HVAC_tee_loss_1.fds
 $QFDS -d HVAC HVAC_tee_loss_2.fds
-$QFDS -d HVAC leak_test_2.fds
 $QFDS -d HVAC leak_test.fds
+$QFDS -d HVAC leak_test_2.fds
+$QFDS -p 2 -d HVAC leak_test_3.fds
+$QFDS -d HVAC leak_test_4.fds
 $QFDS -d HVAC HVAC_leak_exponent.fds
 
 $QFDS -d Miscellaneous layer_1mesh.fds
@@ -332,6 +340,7 @@ $QFDS -d Miscellaneous obst_sphere_mass_flux.fds
 $QFDS -d Miscellaneous obst_cylinder_mass_flux.fds
 $QFDS -d Miscellaneous obst_cone_mass_flux.fds
 $QFDS -d Miscellaneous obst_box_mass_flux.fds
+$QFDS -p 2 -d Miscellaneous part_path_ramp_jog.fds
 
 $QFDS -d NS_Analytical_Solution ns2d_16.fds
 $QFDS -d NS_Analytical_Solution ns2d_16_nupt1.fds
@@ -368,6 +377,7 @@ $QFDS -p 8 -d Pressure_Solver duct_flow_uglmat.fds
 $QFDS -p 8 -d Pressure_Solver duct_flow_uscarc.fds
 $QFDS -p 5 -d Pressure_Solver hallways.fds
 $QFDS -p 8 -d Pressure_Solver tunnel_demo.fds
+$QFDS -p 8 -d Pressure_Solver tunnel_demo_glmat.fds
 $QFDS -d Pressure_Solver pressure_iteration2d_1mesh.fds
 $QFDS -p 8 -d Pressure_Solver pressure_iteration2d_default.fds
 $QFDS -p 8 -d Pressure_Solver pressure_iteration2d_tight.fds
@@ -448,6 +458,8 @@ $QFDS -d Radiation particle_absorption_cart_surf_cart.fds
 $QFDS -d Radiation particle_absorption_cart_surf_cyl.fds
 $QFDS -d Radiation particle_absorption_cart_surf_sph.fds
 $QFDS -d Radiation emissivity.fds
+$QFDS -p 2 -d Radiation geom_rad.fds
+$QFDS -p 8 -d Radiation geom_rad_2.fds
 $QFDS -d Radiation hot_spheres.fds
 $QFDS -d Radiation part_attenuation.fds
 $QFDS -d Radiation plate_view_factor_2D_30.fds
@@ -557,6 +569,8 @@ $QFDS -d Species species_props.fds
 $QFDS -d Species condensation_1.fds
 $QFDS -d Species condensation_2.fds
 $QFDS -d Species condensation_3.fds
+$QFDS -d Species wall_cond.fds
+$QFDS -d Species humidity.fds
 
 $QFDS -d Sprinklers_and_Sprays activate_sprinklers.fds
 $QFDS -d Sprinklers_and_Sprays bucket_test_1.fds
@@ -569,6 +583,7 @@ $QFDS -d Sprinklers_and_Sprays droplet_distributions.fds
 $QFDS -d Sprinklers_and_Sprays droplet_distributions_2.fds
 $QFDS -d Sprinklers_and_Sprays flow_rate.fds
 $QFDS -d Sprinklers_and_Sprays flow_rate_2.fds
+$QFDS -p 2 -d Sprinklers_and_Sprays geom_sprk_mass.fds
 $QFDS -d Sprinklers_and_Sprays particle_colors.fds
 $QFDS -d Sprinklers_and_Sprays particle_drag_U10_N16.fds
 $QFDS -d Sprinklers_and_Sprays particle_drag_U50_N16.fds
@@ -576,7 +591,7 @@ $QFDS -d Sprinklers_and_Sprays particle_drag_U100_N16.fds
 $QFDS -d Sprinklers_and_Sprays particle_drag_U50_N1600.fds
 $QFDS -d Sprinklers_and_Sprays particle_drag_U100_N1600.fds
 $QFDS -d Sprinklers_and_Sprays particle_drag_U150_N1600.fds
-$QFDS -d Sprinklers_and_Sprays e_coefficient.fds
+$QFDS -p 2 -d Sprinklers_and_Sprays e_coefficient.fds
 $QFDS -d Sprinklers_and_Sprays particle_flux.fds
 $QFDS -d Sprinklers_and_Sprays sphere_drag_1.fds
 $QFDS -d Sprinklers_and_Sprays sphere_drag_2.fds
@@ -704,12 +719,20 @@ $QFDS -d Turbulence yplus_32.fds
 $QFDS -d Turbulence ribbed_channel_20.fds
 $QFDS -d Turbulence ribbed_channel_40.fds
 $QFDS -d Turbulence ribbed_channel_80.fds
+# $QFDS -d Turbulence ribbed_channel_160.fds # output file committed to fds/Verification/Turbulence/
+# $QFDS -d Turbulence ribbed_channel_geom_20.fds
+# $QFDS -d Turbulence ribbed_channel_geom_40.fds
+# $QFDS -d Turbulence ribbed_channel_geom_80.fds
+# $QFDS -d Turbulence ribbed_channel_geom_160.fds # output file committed to fds/Verification/Turbulence/
 $QFDS -d Turbulence sem_flat_leddy_p2.fds
 $QFDS -d Turbulence sem_par_leddy_p2.fds
 $QFDS -d Turbulence sem_atm_leddy_p2.fds
 $QFDS -d Turbulence sem_ramp_leddy_p2.fds
 $QFDS -d Turbulence ramp_prof_u_z.fds
 
+$QFDS -d WUI Bova_1a.fds
+$QFDS -d WUI Bova_1b.fds
+$QFDS -d WUI Bova_4a.fds
 $QFDS -d WUI dragon_5a.fds
 $QFDS -p 2 -d WUI ground_vegetation_conv.fds
 $QFDS -p 2 -d WUI ground_vegetation_drag.fds

@@ -605,6 +605,8 @@ ELSE
    WW=>WS
 ENDIF
 
+IF (STORE_DIVERGENCE_CORRECTION) DCOR=0._EB
+
 ! Compute U_DOT_DEL_RHO_H_S and add to other enthalpy equation source terms
 
 CONST_GAMMA_IF_1: IF (.NOT.CONSTANT_SPECIFIC_HEAT_RATIO) THEN
@@ -616,6 +618,7 @@ CONST_GAMMA_IF_1: IF (.NOT.CONSTANT_SPECIFIC_HEAT_RATIO) THEN
          DO I=1,IBAR
             IF (SOLID(CELL_INDEX(I,J,K))) CYCLE
             DP(I,J,K) = DP(I,J,K) - U_DOT_DEL_RHO_H_S(I,J,K)
+            IF (STORE_DIVERGENCE_CORRECTION) DCOR(I,J,K) = - U_DOT_DEL_RHO_H_S(I,J,K)
          ENDDO
       ENDDO
    ENDDO
@@ -650,6 +653,7 @@ ELSE
             IF (SOLID(CELL_INDEX(I,J,K))) CYCLE
             RTRM(I,J,K) = R_H_G(I,J,K)/RHOP(I,J,K)
             DP(I,J,K) = RTRM(I,J,K)*DP(I,J,K)
+            IF (STORE_DIVERGENCE_CORRECTION) DCOR(I,J,K) = RTRM(I,J,K)*DCOR(I,J,K)
          ENDDO
       ENDDO
    ENDDO
@@ -675,6 +679,10 @@ CONST_GAMMA_IF_2: IF (.NOT.CONSTANT_SPECIFIC_HEAT_RATIO) THEN
                CALL GET_SENSIBLE_ENTHALPY_Z(N,TMP(I,J,K),H_S)
                DP(I,J,K) = DP(I,J,K) + (SM%RCON/RSUM(I,J,K) - H_S*R_H_G(I,J,K))* &
                     ( DEL_RHO_D_DEL_Z(I,J,K,N) - U_DOT_DEL_RHO_Z(I,J,K) )/RHOP(I,J,K)
+
+               IF (STORE_DIVERGENCE_CORRECTION) THEN
+                  DCOR(I,J,K) = DCOR(I,J,K) - (SM%RCON/RSUM(I,J,K) - H_S*R_H_G(I,J,K))*U_DOT_DEL_RHO_Z(I,J,K)/RHOP(I,J,K)
+               ENDIF
             ENDDO
          ENDDO
       ENDDO
@@ -1258,7 +1266,7 @@ PREDICT_NORMALS: IF (PREDICTOR) THEN
 
             IF (SF%SPECIES_BC_INDEX==SPECIFIED_MASS_FLUX .OR. &
                 SF%SPECIES_BC_INDEX==INTERPOLATED_BC     .OR. &
-                WC%NODE_INDEX > 0                        .OR. &
+                WC%ONE_D%NODE_INDEX > 0                  .OR. &
                 ANY(SF%LEAK_PATH>0))                          &
                 CYCLE WALL_LOOP3
 
@@ -1407,7 +1415,7 @@ ELSE PREDICT_NORMALS
          SF => SURFACE(WC%SURF_INDEX)
          IF (SF%SPECIES_BC_INDEX==SPECIFIED_MASS_FLUX .OR. &
              SF%SPECIES_BC_INDEX==INTERPOLATED_BC     .OR. &
-             WC%NODE_INDEX > 0                        .OR. &
+             WC%ONE_D%NODE_INDEX > 0                  .OR. &
              ANY(SF%LEAK_PATH>0)) CYCLE
       ENDIF
       WC%ONE_D%U_NORMAL = WC%ONE_D%U_NORMAL_S
