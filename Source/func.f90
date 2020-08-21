@@ -421,6 +421,10 @@ IMPLICIT NONE
 
 CONTAINS
 
+!> \brief Constructs an error message if there was an error during allocatiion of an array
+!> \param CodeSect Character string containing the subroutine or function the allocation statement is in
+!> \param VarName Character string containing the name of the array being allocated
+!> \param IZERO Error value returned by the ALLOCATE statment where 0 is no error
 
 SUBROUTINE ChkMemErr(CodeSect,VarName,IZERO)
 
@@ -438,6 +442,10 @@ CALL SHUTDOWN(MESSAGE,PROCESS_0_ONLY=.FALSE.)
 END SUBROUTINE ChkMemErr
 
 
+!> \brief Changes the allocation of an array with DIMENSION 1
+!> \param P Original array
+!> \param N1 Lower bound of new allocation
+!> \param N2 Upper bound of new allocation
 
 FUNCTION REALLOCATE(P,N1,N2)
 
@@ -459,6 +467,11 @@ DEALLOCATE(P)
 
 END FUNCTION REALLOCATE
 
+!> \brief Changes the allocation of a string array
+!> \param P Original array
+!> \param CLEN Length of string
+!> \param N1 Lower bound of new allocation
+!> \param N2 Upper bound of new allocation
 
 FUNCTION REALLOCATE_CHARACTER_ARRAY(P,CLEN,N1,N2)
 
@@ -480,6 +493,13 @@ DEALLOCATE(P)
 
 END FUNCTION REALLOCATE_CHARACTER_ARRAY
 
+
+!> \brief Changes the allocation of an array with DIMENSION 2
+!> \param P Original array
+!> \param M1 Lower bound of first dimension of new allocation
+!> \param M2 Upper bound of first dimension of new allocation
+!> \param N1 Lower bound of second dimension of new allocation
+!> \param N2 Upper bound of second dimension of new allocation
 
 FUNCTION REALLOCATE2D(P,M1,M2,N1,N2)
 
@@ -521,6 +541,8 @@ DEALLOCATE(DUMMY)
 END SUBROUTINE RE_ALLOCATE_STRINGS
 
 
+!> \brief Determines the size of the ONE_D_M_AND_E_XFER type structure for a surface type
+!> \param SURF_INDEX Index the to array of surface types
 
 SUBROUTINE COMPUTE_ONE_D_STORAGE_DIMENSIONS(SURF_INDEX)
 
@@ -546,16 +568,23 @@ SF%ONE_D_REALS_ARRAY_SIZE(13) = N_TRACKED_SPECIES            ! RHO_D_DZDN_F
 SF%ONE_D_REALS_ARRAY_SIZE(14) = N_LP_ARRAY_INDICES           ! A_LP_MPUA
 SF%ONE_D_REALS_ARRAY_SIZE(15) = N_LP_ARRAY_INDICES           ! LP_CPUA
 SF%ONE_D_REALS_ARRAY_SIZE(16) = N_LP_ARRAY_INDICES           ! LP_MPUA
-SF%ONE_D_REALS_ARRAY_SIZE(17) = N_SURFACE_DENSITY_SPECIES    ! AWM_AEROSOL
+SF%ONE_D_REALS_ARRAY_SIZE(17) = N_LP_ARRAY_INDICES           ! LP_TEMP
+SF%ONE_D_REALS_ARRAY_SIZE(18) = SF%N_CELLS_MAX               ! RHO_C_S
+SF%ONE_D_REALS_ARRAY_SIZE(19) = SF%N_CELLS_MAX+2             ! K_S
+SF%ONE_D_REALS_ARRAY_SIZE(20) = N_SURFACE_DENSITY_SPECIES    ! AWM_AEROSOL
+SF%ONE_D_REALS_ARRAY_SIZE(21) = (SF%N_CELLS_MAX+2)*SF%N_MATL ! RHO_DOT
 
 SF%ONE_D_INTEGERS_ARRAY_SIZE(1) = SF%N_LAYERS           ! N_LAYER_CELLS
 
-SF%N_ONE_D_STORAGE_REALS    = N_ONE_D_SCALAR_REALS    + SUM(SF%ONE_D_REALS_ARRAY_SIZE(1:17))
+SF%N_ONE_D_STORAGE_REALS    = N_ONE_D_SCALAR_REALS    + SUM(SF%ONE_D_REALS_ARRAY_SIZE(1:21))
 SF%N_ONE_D_STORAGE_INTEGERS = N_ONE_D_SCALAR_INTEGERS + SUM(SF%ONE_D_INTEGERS_ARRAY_SIZE(1:1))
 SF%N_ONE_D_STORAGE_LOGICALS = N_ONE_D_SCALAR_LOGICALS
 
 END SUBROUTINE COMPUTE_ONE_D_STORAGE_DIMENSIONS
 
+
+!> \brief Determines the size of the WALL type structure for a surface type
+!> \param SURF_INDEX Index the to array of surface types
 
 SUBROUTINE COMPUTE_WALL_STORAGE_DIMENSIONS(SURF_INDEX)
 
@@ -571,6 +600,9 @@ SF%N_WALL_STORAGE_LOGICALS = N_WALL_SCALAR_LOGICALS + SF%N_ONE_D_STORAGE_LOGICAL
 END SUBROUTINE COMPUTE_WALL_STORAGE_DIMENSIONS
 
 
+!> \brief Determines the size of the CFACE type structure for a surface type
+!> \param SURF_INDEX Index the to array of surface types
+
 SUBROUTINE COMPUTE_CFACE_STORAGE_DIMENSIONS(SURF_INDEX)
 
 INTEGER, INTENT(IN) :: SURF_INDEX
@@ -584,6 +616,9 @@ SF%N_CFACE_STORAGE_LOGICALS = N_CFACE_SCALAR_LOGICALS + SF%N_ONE_D_STORAGE_LOGIC
 
 END SUBROUTINE COMPUTE_CFACE_STORAGE_DIMENSIONS
 
+
+!> \brief Determines the size of the LAGRAGIAN_PARTICLE type structure for a particle type
+!> \param LPC_INDEX Index the to array of surface types
 
 SUBROUTINE COMPUTE_PARTICLE_STORAGE_DIMENSIONS(LPC_INDEX)
 
@@ -600,6 +635,16 @@ LPC%N_STORAGE_LOGICALS = N_PARTICLE_SCALAR_LOGICALS + SF%N_ONE_D_STORAGE_LOGICAL
 
 END SUBROUTINE COMPUTE_PARTICLE_STORAGE_DIMENSIONS
 
+
+!> \brief Allocates storage for data associated with a single wall cell or Lagrangian particle
+!> \param NM Index to the current mesh
+!> \param SURF_INDEX Surface type. Used if WALL_INDEX or CFACE_INDEX is set
+!> \param LPC_INDEX Lagrangian particle class type. Used if LP_INDEX is set.
+!> \param WALL_INDEX Index to the wall cell being allocated. Optional (one of WALL_INDEX, CFACE_INDEX, or LP_INDEX)
+!> \param CFACE_INDEX Index to the cut cell face being allocated. Optional (one of WALL_INDEX, CFACE_INDEX, or LP_INDEX)
+!> \param LP_INDEX Index to the Lagrangian particle being allocated. Optional (one of WALL_INDEX, CFACE_INDEX, or LP_INDEX)
+!> \param TAG Unique indentifier for a particle used since a particle can move between meshes and reneter a mesh.
+!> \param NEW_TAG Flag indicating TAG is for a new particle.
 
 SUBROUTINE ALLOCATE_STORAGE(NM,SURF_INDEX,LPC_INDEX,WALL_INDEX,CFACE_INDEX,LP_INDEX,TAG,NEW_TAG)
 
@@ -896,7 +941,7 @@ END SUBROUTINE CFACE_POINTERS
 
 SUBROUTINE ONE_D_POINTERS(ONE_D_INDEX_LOCAL,NEW,RC,IC,LC)
 
-USE GLOBAL_CONSTANTS, ONLY: RADIATION,TMPM,RHOA,RSUM0
+USE GLOBAL_CONSTANTS, ONLY: RADIATION,TMPM,RHOA,RSUM0,THERMALLY_THICK
 INTEGER, INTENT(IN) :: ONE_D_INDEX_LOCAL,RC,IC,LC
 LOGICAL, INTENT(IN) :: NEW
 INTEGER :: N,NN
@@ -924,6 +969,7 @@ ONE_D%KKG             => OS%INTEGERS(IC+ 8,STORAGE_INDEX) ; IF (NEW) ONE_D%KKG  
 ONE_D%IOR             => OS%INTEGERS(IC+ 9,STORAGE_INDEX) ; IF (NEW) ONE_D%IOR           = 0
 ONE_D%PRESSURE_ZONE   => OS%INTEGERS(IC+10,STORAGE_INDEX) ; IF (NEW) ONE_D%PRESSURE_ZONE = 0
 ONE_D%NODE_INDEX      => OS%INTEGERS(IC+11,STORAGE_INDEX) ; IF (NEW) ONE_D%NODE_INDEX    = 0
+ONE_D%N_SUBSTEPS      => OS%INTEGERS(IC+12,STORAGE_INDEX) ; IF (NEW) ONE_D%N_SUBSTEPS    = 1
 
 I1 = IC+1+N_ONE_D_SCALAR_INTEGERS ; I2 = I1 + SF%ONE_D_INTEGERS_ARRAY_SIZE(1) - 1
 ONE_D%N_LAYER_CELLS(1:I2-I1+1) => OS%INTEGERS(I1:I2,STORAGE_INDEX)
@@ -932,7 +978,6 @@ IF (NEW) ONE_D%N_LAYER_CELLS(1:SF%N_LAYERS) = SF%N_LAYER_CELLS(1:SF%N_LAYERS)
 ! Assign and initialize logicals
 
 ONE_D%BURNAWAY        => OS%LOGICALS(LC+1,STORAGE_INDEX) ; IF (NEW) ONE_D%BURNAWAY = .FALSE.
-ONE_D%CHANGE_THICKNESS => OS%LOGICALS(LC+2,STORAGE_INDEX) ; IF (NEW) ONE_D%CHANGE_THICKNESS = .FALSE.
 
 ! Assign and initialize reals
 
@@ -940,11 +985,11 @@ ONE_D%AREA            => OS%REALS(RC+ 1,STORAGE_INDEX) ; IF (NEW) ONE_D%AREA    
 ONE_D%HEAT_TRANS_COEF => OS%REALS(RC+ 2,STORAGE_INDEX) ; IF (NEW) ONE_D%HEAT_TRANS_COEF = 0._EB
 ONE_D%Q_CON_F         => OS%REALS(RC+ 3,STORAGE_INDEX) ; IF (NEW) ONE_D%Q_CON_F         = 0._EB
 IF (RADIATION) THEN
-   ONE_D%Q_RAD_IN          => OS%REALS(RC+ 4,STORAGE_INDEX) ; IF (NEW) ONE_D%Q_RAD_IN          = SF%EMISSIVITY*SIGMA*TMPA4
-   ONE_D%Q_RAD_OUT         => OS%REALS(RC+ 5,STORAGE_INDEX) ; IF (NEW) ONE_D%Q_RAD_OUT         = SF%EMISSIVITY*SIGMA*TMPA4
+   ONE_D%Q_RAD_IN     => OS%REALS(RC+ 4,STORAGE_INDEX) ; IF (NEW) ONE_D%Q_RAD_IN        = SF%EMISSIVITY*SIGMA*TMPA4
+   ONE_D%Q_RAD_OUT    => OS%REALS(RC+ 5,STORAGE_INDEX) ; IF (NEW) ONE_D%Q_RAD_OUT       = SF%EMISSIVITY*SIGMA*TMPA4
 ELSE
-   ONE_D%Q_RAD_IN          => OS%REALS(RC+ 4,STORAGE_INDEX) ; IF (NEW) ONE_D%Q_RAD_IN          = 0._EB
-   ONE_D%Q_RAD_OUT         => OS%REALS(RC+ 5,STORAGE_INDEX) ; IF (NEW) ONE_D%Q_RAD_OUT         = 0._EB
+   ONE_D%Q_RAD_IN     => OS%REALS(RC+ 4,STORAGE_INDEX) ; IF (NEW) ONE_D%Q_RAD_IN        = 0._EB
+   ONE_D%Q_RAD_OUT    => OS%REALS(RC+ 5,STORAGE_INDEX) ; IF (NEW) ONE_D%Q_RAD_OUT       = 0._EB
 ENDIF
 ONE_D%EMISSIVITY      => OS%REALS(RC+ 6,STORAGE_INDEX) ; IF (NEW) ONE_D%EMISSIVITY      = SF%EMISSIVITY
 ONE_D%AREA_ADJUST     => OS%REALS(RC+ 7,STORAGE_INDEX) ; IF (NEW) ONE_D%AREA_ADJUST     = 1._EB
@@ -973,6 +1018,10 @@ ONE_D%Q_DOT_O2_PP     => OS%REALS(RC+29,STORAGE_INDEX) ; IF (NEW) ONE_D%Q_DOT_O2
 ONE_D%Q_CONDENSE      => OS%REALS(RC+30,STORAGE_INDEX) ; IF (NEW) ONE_D%Q_CONDENSE      = 0._EB
 ONE_D%TMP_F_OLD       => OS%REALS(RC+31,STORAGE_INDEX) ; IF (NEW) ONE_D%TMP_F_OLD       = SF%TMP_FRONT
 ONE_D%K_SUPPRESSION   => OS%REALS(RC+32,STORAGE_INDEX) ; IF (NEW) ONE_D%K_SUPPRESSION   = 0._EB
+ONE_D%BURN_DURATION   => OS%REALS(RC+33,STORAGE_INDEX) ; IF (NEW) ONE_D%BURN_DURATION   = SF%BURN_DURATION
+ONE_D%T_SCALE         => OS%REALS(RC+34,STORAGE_INDEX) ; IF (NEW) ONE_D%T_SCALE         = 0._EB
+ONE_D%Q_SCALE         => OS%REALS(RC+35,STORAGE_INDEX) ; IF (NEW) ONE_D%Q_SCALE         = 0._EB
+ONE_D%L_OBUKHOV       => OS%REALS(RC+36,STORAGE_INDEX) ; IF (NEW) ONE_D%L_OBUKHOV       = 0._EB
 
 I1 = RC+1+N_ONE_D_SCALAR_REALS ; I2 = I1 + SF%ONE_D_REALS_ARRAY_SIZE(1) - 1
 ONE_D%M_DOT_G_PP_ACTUAL(1:I2-I1+1) => OS%REALS(I1:I2,STORAGE_INDEX)
@@ -995,7 +1044,7 @@ ONE_D%TMP(0:I2-I1) => OS%REALS(I1:I2,STORAGE_INDEX)
 IF (NEW) ONE_D%TMP(0:SF%N_CELLS_INI+1) = SF%TMP_INNER(1)
 
 IF (NEW) THEN
-   IF (SF%THERMALLY_THICK) THEN
+   IF (SF%THERMAL_BC_INDEX==THERMALLY_THICK) THEN
       IF (SF%RAMP_T_I_INDEX > 0) THEN
          DO N=0,SF%N_CELLS_INI
             X_POS = MAX(0._EB,MIN(RAMPS(SF%RAMP_T_I_INDEX)%SPAN,SF%X_S(N)-RAMPS(SF%RAMP_T_I_INDEX)%T_MIN))
@@ -1071,8 +1120,26 @@ ONE_D%LP_MPUA(1:I2-I1+1) => OS%REALS(I1:I2,STORAGE_INDEX)
 IF (NEW) ONE_D%LP_MPUA(1:I2-I1+1) = 0._EB
 
 I1 = I2+1 ; I2 = I1 + SF%ONE_D_REALS_ARRAY_SIZE(17) - 1
+ONE_D%LP_TEMP(1:I2-I1+1) => OS%REALS(I1:I2,STORAGE_INDEX)
+IF (NEW) ONE_D%LP_TEMP(1:I2-I1+1) = TMPA
+
+I1 = I2+1 ; I2 = I1 + SF%ONE_D_REALS_ARRAY_SIZE(18) - 1
+ONE_D%RHO_C_S(1:I2-I1+1) => OS%REALS(I1:I2,STORAGE_INDEX)
+IF (NEW) ONE_D%RHO_C_S(1:I2-I1+1) = 1.E6_EB
+
+I1 = I2+1 ; I2 = I1 + SF%ONE_D_REALS_ARRAY_SIZE(19) - 1
+ONE_D%K_S(0:SF%N_CELLS_INI+1) => OS%REALS(I1:I2,STORAGE_INDEX)
+IF (NEW) ONE_D%K_S(0:SF%N_CELLS_INI+1) = 0._EB
+
+I1 = I2+1 ; I2 = I1 + SF%ONE_D_REALS_ARRAY_SIZE(20) - 1
 ONE_D%AWM_AEROSOL(1:I2-I1+1) => OS%REALS(I1:I2,STORAGE_INDEX)
 IF (NEW) ONE_D%AWM_AEROSOL(1:I2-I1+1) = 0._EB
+
+DO NN=1,SF%N_MATL
+   I1 = I2+1 ; I2 = I1 + (SF%N_CELLS_MAX+2) - 1
+   ONE_D%MATL_COMP(NN)%RHO_DOT(0:SF%N_CELLS_MAX+1) => OS%REALS(I1:I2,STORAGE_INDEX)
+   IF (NEW) ONE_D%MATL_COMP(NN)%RHO_DOT(0:SF%N_CELLS_INI+1) = 0._EB
+ENDDO
 
 END SUBROUTINE ONE_D_POINTERS
 
@@ -1278,69 +1345,65 @@ OBST_LOOP: DO N=1,M%N_OBST
                IF (.NOT.M%SOLID(IC)) CYCLE I_LOOP
                M%WALL_INDEX_HT3D(IC,:) = 0
                CELL_COUNT = 0
-               CELL_COUNT(0) = 1000000
 
                MARCH_RIGHT: DO II=I+1,M%IBAR
                   ICN = M%CELL_INDEX(II,J,K)
-                  CELL_COUNT(1) = CELL_COUNT(1) + 1
                   IF (.NOT.M%SOLID(ICN)) THEN
+                     CELL_COUNT(1) = II-I
                      M%WALL_INDEX_HT3D(IC,1) = M%WALL_INDEX(ICN,-1)
                      EXIT MARCH_RIGHT
                   ENDIF
-                  IF (II==M%IBAR) CELL_COUNT(1) = 1000000
                ENDDO MARCH_RIGHT
 
                MARCH_LEFT: DO II=I-1,1,-1
                   ICN = M%CELL_INDEX(II,J,K)
-                  CELL_COUNT(-1) = CELL_COUNT(-1) + 1
                   IF (.NOT.M%SOLID(ICN)) THEN
+                     CELL_COUNT(-1) = I-II
                      M%WALL_INDEX_HT3D(IC,-1) = M%WALL_INDEX(ICN,1)
                      EXIT MARCH_LEFT
                   ENDIF
-                  IF (II==1) CELL_COUNT(-1) = 1000000
                ENDDO MARCH_LEFT
 
                MARCH_FORWARD: DO JJ=J+1,M%JBAR
                   ICN = M%CELL_INDEX(I,JJ,K)
-                  CELL_COUNT(2) = CELL_COUNT(2) + 1
                   IF (.NOT.M%SOLID(ICN)) THEN
+                     CELL_COUNT(2) = JJ-J
                      M%WALL_INDEX_HT3D(IC,2) = M%WALL_INDEX(ICN,-2)
                      EXIT MARCH_FORWARD
                   ENDIF
-                  IF (JJ==M%JBAR) CELL_COUNT(2) = 1000000
                ENDDO MARCH_FORWARD
 
                MARCH_BACK: DO JJ=J-1,1,-1
                   ICN = M%CELL_INDEX(I,JJ,K)
-                  CELL_COUNT(-2) = CELL_COUNT(-2) + 1
                   IF (.NOT.M%SOLID(ICN)) THEN
+                     CELL_COUNT(-2) = J-JJ
                      M%WALL_INDEX_HT3D(IC,-2) = M%WALL_INDEX(ICN,2)
                      EXIT MARCH_BACK
                   ENDIF
-                  IF (JJ==1) CELL_COUNT(-2) = 1000000
                ENDDO MARCH_BACK
 
                MARCH_UP: DO KK=K+1,M%KBAR
                   ICN = M%CELL_INDEX(I,J,KK)
-                  CELL_COUNT(3) = CELL_COUNT(3) + 1
                   IF (.NOT.M%SOLID(ICN)) THEN
+                     CELL_COUNT(3) = KK-K
                      M%WALL_INDEX_HT3D(IC,3) = M%WALL_INDEX(ICN,-3)
                      EXIT MARCH_UP
                   ENDIF
-                  IF (KK==M%KBAR) CELL_COUNT(3) = 1000000
                ENDDO MARCH_UP
 
                MARCH_DOWN: DO KK=K-1,1,-1
                   ICN = M%CELL_INDEX(I,J,KK)
-                  CELL_COUNT(-3) = CELL_COUNT(-3) + 1
                   IF (.NOT.M%SOLID(ICN)) THEN
+                     CELL_COUNT(-3) = K-KK
                      M%WALL_INDEX_HT3D(IC,-3) = M%WALL_INDEX(ICN,3)
                      EXIT MARCH_DOWN
                   ENDIF
-                  IF (KK==1) CELL_COUNT(-3) = 1000000
                ENDDO MARCH_DOWN
 
-               M%WALL_INDEX_HT3D(IC,0) = M%WALL_INDEX_HT3D(IC,MINLOC(CELL_COUNT,DIM=1)-4)
+               ! Note: If multiple elements in the CELL_COUNT array have the same value, which will happen at a corner
+               ! for example, then BACK=.TRUE. selects the last element.  This has the effect of giving precendence to +3
+               ! at a (+1,+3) corner, for example.
+               M%WALL_INDEX_HT3D(IC,0) = M%WALL_INDEX_HT3D(IC,MINLOC(CELL_COUNT,DIM=1,MASK=CELL_COUNT>0,BACK=.TRUE.)-4)
 
             ENDDO I_LOOP
          ENDDO J_LOOP
@@ -1611,7 +1674,7 @@ REAL(EB) :: R, THICKNESS, X_DIVIDE
    THICKNESS = SUM(LAYER_THICKNESS)
 
    SELECT CASE(GEOMETRY)
-      CASE(SURF_CARTESIAN,SURF_BLOWING_PLATE)
+      CASE(SURF_CARTESIAN)
          I_GRAD = 0
       CASE(SURF_CYLINDRICAL)
          I_GRAD = 1
@@ -1715,64 +1778,71 @@ END SUBROUTINE GET_WALL_NODE_WEIGHTS
 
 
 
-SUBROUTINE GET_INTERPOLATION_WEIGHTS(N_LAYERS,NWP,NWP_NEW,N_LAYER_CELLS,N_LAYER_CELLS_NEW,X_S,X_S_NEW,INT_WGT)
+SUBROUTINE GET_INTERPOLATION_WEIGHTS(GEOMETRY,NWP,NWP_NEW,INNER_RADIUS,X_S,X_S_NEW,INT_WGT)
 
-INTEGER, INTENT(IN)  :: N_LAYERS,NWP,NWP_NEW,N_LAYER_CELLS(N_LAYERS),N_LAYER_CELLS_NEW(N_LAYERS)
-REAL(EB), INTENT(IN) :: X_S(0:NWP), X_S_NEW(0:NWP_NEW)
-REAL(EB), INTENT(OUT) :: INT_WGT(:,:)
+INTEGER, INTENT(IN)  :: GEOMETRY,NWP,NWP_NEW
+REAL(EB), INTENT(IN) :: X_S(0:NWP), X_S_NEW(0:NWP_NEW), INNER_RADIUS
+REAL(EB), INTENT(OUT) :: INT_WGT(NWP_NEW,NWP)
 
-REAL(EB) XUP,XLOW,XUP_NEW,XLOW_NEW,DX_NEW
-INTEGER I, J, II, JJ, I_BASE, J_BASE, J_OLD,N
-II = 0
-JJ = 0
-I_BASE = 0
-J_BASE = 0
+REAL(EB) XUP,XLOW,XUP_NEW,XLOW_NEW,VOL_NEW,VOL,THICKNESS
+INTEGER I_NEW, I_OLD, I_GRAD
 
+
+SELECT CASE(GEOMETRY)
+   CASE(SURF_CARTESIAN)
+      I_GRAD = 1
+   CASE(SURF_CYLINDRICAL)
+      I_GRAD = 2
+   CASE(SURF_SPHERICAL)
+      I_GRAD = 3
+END SELECT
+
+I_OLD = 1
 INT_WGT = 0._EB
-DO N = 1,N_LAYERS
-   J_OLD = 1
-   DO I = 1,N_LAYER_CELLS_NEW(N)
-      II       = I_BASE + I
-      XUP_NEW  = X_S_NEW(II)
-      XLOW_NEW = X_S_NEW(II-1)
-      DX_NEW   = XUP_NEW - XLOW_NEW
-   !  XUP_NEW  = X_S_NEW(NWP_NEW)-X_S_NEW(II-1)
-   !  XLOW_NEW = X_S_NEW(NWP_NEW)-X_S_NEW(II)
-   !  DX_NEW   = XUP_NEW**3 - XLOW_NEW**3
-      DO J = J_OLD,N_LAYER_CELLS(N)
-         JJ = J_BASE + J
-         XUP =  X_S(JJ)
-         XLOW = X_S(JJ-1)
-   !     XUP =  X_S(NWP)-X_S(JJ-1)
-   !     XLOW = X_S(NWP)-X_S(JJ)
-         INT_WGT(II,JJ) = (MIN(XUP,XUP_NEW)-MAX(XLOW,XLOW_NEW))/DX_NEW
-   !     INT_WGT(II,JJ) = (MIN(XUP,XUP_NEW)**3-MAX(XLOW,XLOW_NEW)**3)/DX_NEW
-         IF (XUP >= XUP_NEW) EXIT
-      ENDDO
-      J_OLD = J
-   ENDDO
-   I_BASE = I_BASE + N_LAYER_CELLS_NEW(N)
-   J_BASE = J_BASE + N_LAYER_CELLS(N)
-ENDDO
+THICKNESS = X_S(NWP)
+
+POINT_LOOP: DO I_NEW=1,NWP_NEW
+XLOW_NEW = X_S_NEW(I_NEW-1)
+XUP_NEW = X_S_NEW(I_NEW)
+
+   OLD_POINT_LOOP: DO
+      XLOW = X_S(I_OLD-1)
+      XUP = X_S(I_OLD)
+      VOL = (THICKNESS+INNER_RADIUS-XLOW)**I_GRAD-(THICKNESS+INNER_RADIUS-XUP)**I_GRAD
+      VOL_NEW = (THICKNESS+INNER_RADIUS-MAX(XLOW_NEW,XLOW))**I_GRAD-(THICKNESS+INNER_RADIUS-MIN(XUP_NEW,XUP))**I_GRAD
+      IF (VOL > 0._EB) INT_WGT(I_NEW,I_OLD) = MAX(0._EB,MIN(1._EB,VOL_NEW/VOL))
+      IF (XUP >= XUP_NEW .OR. I_OLD==NWP) EXIT OLD_POINT_LOOP
+      I_OLD = I_OLD+1
+   ENDDO OLD_POINT_LOOP
+
+ENDDO POINT_LOOP
 
 END SUBROUTINE GET_INTERPOLATION_WEIGHTS
 
 
+!> \brief Interpolates old array of wall properties to reflect new wall noding
+!>
+!> \param N_CELLS Maximum of the previous or current number of wall nodes
+!> \param NWP Previous number of wall nodes
+!> \param NWP_NEW Current number of wall nodes
+!> \param INT_WGT array of weighting factors mapping old wall nodes to new wall nodes
+!> \param ARR On input this is the old array and on output this is the new array
 
 SUBROUTINE INTERPOLATE_WALL_ARRAY(N_CELLS,NWP,NWP_NEW,INT_WGT,ARR)
 
 INTEGER, INTENT(IN)  :: N_CELLS,NWP,NWP_NEW
-REAL(EB), INTENT(IN) :: INT_WGT(:,:)
-REAL(EB) ARR(N_CELLS),TMP(N_CELLS)
+REAL(EB), INTENT(IN) :: INT_WGT(NWP_NEW,NWP)
+REAL(EB), INTENT(INOUT ):: ARR(N_CELLS)
+REAL(EB) :: TMP(N_CELLS)
 
 INTEGER I,J
 
 TMP = ARR
 ARR = 0._EB
 DO I = 1,NWP_NEW
-DO J = 1,NWP
-   ARR(I) = ARR(I) + INT_WGT(I,J)*TMP(J)
-ENDDO
+  DO J = 1,NWP
+        ARR(I) = ARR(I) + INT_WGT(I,J) * TMP(J)
+  ENDDO
 ENDDO
 
 END SUBROUTINE INTERPOLATE_WALL_ARRAY
@@ -2508,6 +2578,17 @@ Z1 = A*SIN(TWOPI*U2)
 END SUBROUTINE BOX_MULLER
 
 
+REAL(EB) FUNCTION F_B(B)
+REAL(EB), INTENT(IN) :: B
+
+IF (B<=0._EB) THEN
+   F_B = 1._EB
+ELSE
+   F_B = (1._EB+B)**0.7_EB*LOG(1._EB+B)/B
+ENDIF
+END FUNCTION F_B
+
+
 END MODULE MATH_FUNCTIONS
 
 
@@ -3054,14 +3135,14 @@ ELSE
    RETURN
 ENDIF
 
-THERMALLY_THICK_IF: IF (.NOT.SF%THERMALLY_THICK) THEN
+THERMALLY_THICK_IF: IF (SF%THERMAL_BC_INDEX/=THERMALLY_THICK) THEN
 
    SURFACE_DENSITY = 0._EB
 
 ELSE THERMALLY_THICK_IF
 
    SELECT CASE(SF%GEOMETRY)
-      CASE(SURF_CARTESIAN, SURF_BLOWING_PLATE)    ; I_GRAD = 1
+      CASE(SURF_CARTESIAN)    ; I_GRAD = 1
       CASE(SURF_CYLINDRICAL)  ; I_GRAD = 2
       CASE(SURF_SPHERICAL)    ; I_GRAD = 3
    END SELECT
@@ -3419,7 +3500,11 @@ USE MATH_FUNCTIONS, ONLY : EVALUATE_RAMP
 REAL(EB), INTENT(IN) :: TMP_IN,Z_IN
 REAL(EB) :: PP,DUMMY
 
-PP = EVALUATE_RAMP(Z_IN,DUMMY,I_RAMP_P0_Z)
+IF (STRATIFICATION) THEN
+   PP = EVALUATE_RAMP(Z_IN,DUMMY,I_RAMP_P0_Z)
+ELSE
+   PP = P_INF
+ENDIF
 GET_POTENTIAL_TEMPERATURE = TMP_IN*(1.E5_EB/PP)**GM1OG  ! GM1OG = (GAMMA-1)/GAMMA = R/CP
 
 END FUNCTION GET_POTENTIAL_TEMPERATURE
@@ -3429,49 +3514,131 @@ SUBROUTINE MONIN_OBUKHOV_SIMILARITY(Z,Z_0,L,U_STAR,THETA_STAR,THETA_0,U,TMP)
 
 REAL(EB), INTENT(IN) :: Z,Z_0,L,U_STAR,THETA_STAR,THETA_0
 REAL(EB), INTENT(OUT) :: U,TMP
-REAL(EB), PARAMETER :: KAPPA=0.41_EB,P_REF=100000._EB,RHO_REF=1.2_EB
-REAL(EB) :: ZETA,PSI_M,PSI_H,THETA
+REAL(EB), PARAMETER :: P_REF=100000._EB,RHO_REF=1.2_EB
+REAL(EB) :: PSI_M,PSI_H,THETA,KAPPA
 
-IF (L>=0._EB) THEN
-  PSI_M = -5._EB*Z/L
-  PSI_H = PSI_M
-ELSE
-  ZETA = (1._EB-16._EB*Z/L)**0.25_EB
-  PSI_M = 2._EB*LOG(0.5_EB*(1._EB+ZETA)) + LOG(0.5_EB*(1._EB+ZETA**2)) - 2._EB*ATAN(ZETA) + 0.5_EB*PI
-  PSI_H = 2._EB*LOG(0.5_EB*(1._EB+ZETA**2))
-ENDIF
+KAPPA = VON_KARMAN_CONSTANT
+CALL MONIN_OBUKHOV_STABILITY_CORRECTIONS(PSI_M,PSI_H,Z,L)
 U = (U_STAR/KAPPA)*(LOG(Z/Z_0)-PSI_M)
 THETA = THETA_0 + (THETA_STAR/KAPPA)*(LOG(Z/Z_0)-PSI_H)
-TMP = THETA*(P_REF/(P_REF-RHO_REF*GRAV*Z))**(-0.286_EB)
+TMP = THETA*(P_REF/(P_REF-RHO_REF*GRAV*Z))**(-0.285_EB)
 
 END SUBROUTINE MONIN_OBUKHOV_SIMILARITY
 
 
-SUBROUTINE TURBULENT_VISCOSITY_INTERP1D(NU_OUT,NU_2,NU_3,DX_1,DX_2,DX_3)
+SUBROUTINE MONIN_OBUKHOV_STABILITY_CORRECTIONS(PSI_M,PSI_H,Z,L)
 
-! quadratic interpolation of the turbulent viscosity (MU_SGS) to the first off-wall gas phase cell center
-! using 2nd and 3rd gas values
-! assumes NU(z=0)=0, allows for non-uniform grid
-!
-!        NU_OUT         NU_2                 NU_3
-! /////|    o    |        o        |           o           |
-!         DX_1          DX_2                 DX_3
+! Reference: A.J. Dyer. A review of flux profile relationships. Boundary-Layer Meteorology, 7:363–372, 1974.
 
-REAL(EB), INTENT(IN) :: NU_2,NU_3,DX_1,DX_2,DX_3
-REAL(EB), INTENT(OUT) :: NU_OUT
-REAL(EB) :: B,C,L_1,L_2,L_3
+REAL(EB), INTENT(IN) :: Z,L
+REAL(EB), INTENT(OUT) :: PSI_M,PSI_H
+REAL(EB) :: ZETA
 
-L_1 = 0.5_EB*DX_1
-L_2 = DX_1 + 0.5_EB*DX_2
-L_3 = DX_1 + DX_2 + 0.5_EB*DX_3
+IF (L>=0._EB) THEN
+   ! stable boundary layer
+   PSI_M = -5._EB*Z/L
+   PSI_H = PSI_M
+ELSE
+   ! unstable boundary layer
+   ZETA = (1._EB-16._EB*Z/L)**0.25_EB
+   PSI_M = 2._EB*LOG(0.5_EB*(1._EB+ZETA)) + LOG(0.5_EB*(1._EB+ZETA**2)) - 2._EB*ATAN(ZETA) + 0.5_EB*PI
+   PSI_H = 2._EB*LOG(0.5_EB*(1._EB+ZETA**2))
+ENDIF
 
-C = ( NU_3 - NU_2*L_3/L_2 ) / ( L_3**2 - L_2*L_3 )
-B = ( NU_2 - C*L_2**2 ) / L_2
+END SUBROUTINE MONIN_OBUKHOV_STABILITY_CORRECTIONS
 
-NU_OUT = MAX(0._EB,B*L_1 + C*L_1**2)
+!> \brief Computes the mass and heat transfer coeffiicents for a liquid droplet in air based on the selected EVAP_MODEL on MISC
+!> \param H_MASS The mass transfer coefficient (m2/s)
+!> \param H_HEAT The dropelt heat transfer coefficient (W/m2/K)
+!> \param D_AIR Diffusivity in air of the droplet species in the gas cell with the droplet (m2/s)
+!> \param K_AIR Conductivity in the gas cell with the droplet (W/m/k)
+!> \param CP_AIR Specific heat in the gas cell with the droplet (J/kg/K)
+!> \param RHO_AIR Density in the gas cell with the droplet (kg/m3)
+!> \param LENGTH Length scale (m)
+!> \param Y_DROP Equilibrium vapor fraction for the current droplet temperature
+!> \param Y_GAS Mass fraction of vapor in the gas
+!> \param B_NUMBER B number for the droplet
+!> \param NU_FAC_GAS Constant factor used in computing  the NUsselt number
+!> \param SH_FAC_GAS Constant factor used in computing  the Sherwood number
+!> \param RE_L Renyolds number
+!> \param TMP_FILM Film temperature for the droplet (K)
+!> \param ZZ_GET Tracked species mass fractions in the gas cell with the droplet
+!> \param Z_INDEX Droplet species index in ZZ
 
-END SUBROUTINE TURBULENT_VISCOSITY_INTERP1D
+SUBROUTINE DROPLET_H_MASS_H_HEAT_GAS(H_MASS,H_HEAT,D_AIR,K_AIR,CP_AIR,RHO_AIR,LENGTH,Y_DROP,Y_GAS,B_NUMBER,NU_FAC_GAS,SH_FAC_GAS, &
+                                     RE_L,TMP_FILM,ZZ_GET,Z_INDEX)
+USE MATH_FUNCTIONS, ONLY: F_B
+REAL(EB), INTENT(IN) :: D_AIR,CP_AIR,K_AIR,RHO_AIR,LENGTH,Y_DROP,Y_GAS,NU_FAC_GAS,SH_FAC_GAS,RE_L,TMP_FILM, &
+                        ZZ_GET(1:N_TRACKED_SPECIES)
+INTEGER, INTENT(IN) :: Z_INDEX
+REAL(EB), INTENT(INOUT) :: B_NUMBER
+REAL(EB), INTENT(OUT) :: H_MASS,H_HEAT
+REAL(EB) :: NUSSELT,SHERWOOD,LEWIS,THETA,C_GAS_DROP,C_GAS_AIR,ZZ_GET2(1:N_TRACKED_SPECIES)
 
+SELECT CASE (EVAP_MODEL)
+   CASE(-1) ! Ranz Marshall
+      NUSSELT  = 2._EB + NU_FAC_GAS*SQRT(RE_L)
+      H_HEAT   = NUSSELT*K_AIR/LENGTH
+      IF (Y_DROP <= Y_GAS) THEN
+         H_MASS   = 0._EB
+      ELSE
+         SHERWOOD = 2._EB + SH_FAC_GAS*SQRT(RE_L)
+         H_MASS   = SHERWOOD*D_AIR/LENGTH
+      ENDIF
+   CASE(0) ! Sazhin M0, Eq 106 + 109 with B_T=B_M. This is the default model.
+      IF (Y_DROP <= Y_GAS) THEN
+         NUSSELT  = 2._EB + NU_FAC_GAS*SQRT(RE_L)
+         H_HEAT   = NUSSELT*K_AIR/LENGTH
+         H_MASS   = 0._EB
+      ELSE
+         NUSSELT  = ( 2._EB + NU_FAC_GAS*SQRT(RE_L) )*LOG(1._EB+B_NUMBER)/B_NUMBER
+         H_HEAT   = NUSSELT*K_AIR/LENGTH
+         SHERWOOD = ( 2._EB + SH_FAC_GAS*SQRT(RE_L) )*LOG(1._EB+B_NUMBER)/(Y_DROP-Y_GAS)
+         H_MASS   = SHERWOOD*D_AIR/LENGTH
+         ! above we save a divide and multiply of B_NUMBER
+         ! the full model corresponding to Sazhin (108) and (109) would be
+         ! SH = SH_0 * LOG(1+B_M)/B_M
+         ! H_MASS = SH * D/L * B_M/(Y_D-Y_G)
+      ENDIF
+   CASE(1) ! Sazhin M1, Eq 106 + 109 with eq 102.
+      IF (Y_DROP <= Y_GAS) THEN
+         NUSSELT  = 2._EB + NU_FAC_GAS*SQRT(RE_L)
+         H_HEAT   = NUSSELT*K_AIR/LENGTH
+         H_MASS   = 0._EB
+      ELSE
+         SHERWOOD = ( 2._EB + SH_FAC_GAS*SQRT(RE_L) )*LOG(1._EB+B_NUMBER)/(Y_DROP-Y_GAS)
+         H_MASS   = SHERWOOD*D_AIR/LENGTH
+         LEWIS    = K_AIR / (RHO_AIR * D_AIR * CP_AIR)
+         ZZ_GET2(1:N_TRACKED_SPECIES) = 0._EB
+         ZZ_GET2(Z_INDEX) = 1._EB
+         CALL GET_SPECIFIC_HEAT(ZZ_GET2,C_GAS_DROP,TMP_FILM)
+         CALL GET_SPECIFIC_HEAT(ZZ_GET,C_GAS_AIR,TMP_FILM)
+         THETA = C_GAS_DROP/C_GAS_AIR/LEWIS
+         B_NUMBER = (1._EB+B_NUMBER)**THETA-1._EB
+         NUSSELT  = ( 2._EB + NU_FAC_GAS*SQRT(RE_L) )*LOG(1._EB+B_NUMBER)/B_NUMBER
+         H_HEAT   = NUSSELT*K_AIR/LENGTH
+      ENDIF
+   CASE(2) ! Sazhin M2, Eq 116 and 117 with eq 106, 109, and 102.
+      IF (Y_DROP <= Y_GAS) THEN
+         NUSSELT  = 2._EB + NU_FAC_GAS*SQRT(RE_L)
+         H_HEAT   = NUSSELT*K_AIR/LENGTH
+         H_MASS   = 0._EB
+      ELSE
+         SHERWOOD = ( 2._EB + SH_FAC_GAS*SQRT(RE_L) )*LOG(1._EB+B_NUMBER)/((Y_DROP-Y_GAS)*F_B(B_NUMBER))
+         H_MASS   = SHERWOOD*D_AIR/LENGTH
+         LEWIS    = K_AIR / (RHO_AIR * D_AIR * CP_AIR)
+         ZZ_GET2(1:N_TRACKED_SPECIES) = 0._EB
+         ZZ_GET2(Z_INDEX) = 1._EB
+         CALL GET_SPECIFIC_HEAT(ZZ_GET2,C_GAS_DROP,TMP_FILM)
+         CALL GET_SPECIFIC_HEAT(ZZ_GET,C_GAS_AIR,TMP_FILM)
+         THETA = C_GAS_DROP/C_GAS_AIR/LEWIS
+         B_NUMBER = (1._EB+B_NUMBER)**THETA-1._EB
+         NUSSELT  = ( 2._EB + NU_FAC_GAS*SQRT(RE_L) )*LOG(1._EB+B_NUMBER)/(B_NUMBER*F_B(B_NUMBER))
+         H_HEAT   = NUSSELT*K_AIR/LENGTH
+      ENDIF
+END SELECT
+
+END SUBROUTINE DROPLET_H_MASS_H_HEAT_GAS
 
 END MODULE PHYSICAL_FUNCTIONS
 
@@ -3622,7 +3789,7 @@ END MODULE TRAN
 
 MODULE OPENMP
 
-! Module for OpenMP check
+!> \brief Module for various OpenMP functions
 
 USE GLOBAL_CONSTANTS, ONLY : OPENMP_AVAILABLE_THREADS, OPENMP_USED_THREADS, OPENMP_USER_SET_THREADS, USE_OPENMP
 !$ USE OMP_LIB
@@ -3631,7 +3798,8 @@ PUBLIC OPENMP_INIT, OPENMP_SET_THREADS, OPENMP_PRINT_STATUS
 
 CONTAINS
 
-! set the control flag USE_OPENMP if OpenMP is used
+!> \brief Set the control flag USE_OPENMP if OpenMP is used.
+
 SUBROUTINE OPENMP_INIT
 
 !$OMP PARALLEL
@@ -3646,7 +3814,9 @@ SUBROUTINE OPENMP_INIT
 
 END SUBROUTINE OPENMP_INIT
 
-! change the number of OpenMP threads if set by the user in the input file
+
+!> \brief Change the number of OpenMP threads if set by the user in the input file.
+
 SUBROUTINE OPENMP_SET_THREADS
 
 !$IF (OPENMP_USER_SET_THREADS .EQV. .TRUE.) THEN
@@ -3660,7 +3830,9 @@ SUBROUTINE OPENMP_SET_THREADS
 
 END SUBROUTINE OPENMP_SET_THREADS
 
-! print OpenMP status
+
+!> \brief Write OpenMP status to standard error.
+
 SUBROUTINE OPENMP_PRINT_STATUS
   USE GLOBAL_CONSTANTS, ONLY : LU_ERR, MYID, N_MPI_PROCESSES, VERBOSE
   INTEGER :: THREAD_ID
@@ -3726,6 +3898,14 @@ WRITE(LU,'(A,A)') ' MPI library version: ',TRIM(MPILIBVERSION)
 
 END SUBROUTINE WRITE_SUMMARY_INFO
 
+
+!> \brief Finds the device or control function assoicated with an input
+!> \param NAME Namelist ID
+!> \param CTRL_ID String containing name of control function.
+!> \param DEVC_ID String containing name of device.
+!> \param DEVICE_INDEX Integer index locating DEVC_ID in the array of devices.
+!> \param CONTORL_INDEX Integer index locating CTRL_ID in the array of control functions.
+!> \param INPUT_INDEX The current count of inputs of type NAME.
 
 SUBROUTINE SEARCH_CONTROLLER(NAME,CTRL_ID,DEVC_ID,DEVICE_INDEX,CONTROL_INDEX,INPUT_INDEX)
 

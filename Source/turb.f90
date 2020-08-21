@@ -16,10 +16,10 @@ PUBLIC :: INIT_TURB_ARRAYS, VARDEN_DYNSMAG, WANNIER_FLOW, &
           WALL_MODEL, COMPRESSION_WAVE, VELTAN2D,VELTAN3D, &
           SYNTHETIC_TURBULENCE, SYNTHETIC_EDDY_SETUP, TEST_FILTER, EX2G3D, TENSOR_DIFFUSIVITY_MODEL, &
           TWOD_VORTEX_CERFACS, TWOD_VORTEX_UMD, TWOD_SOBOROT_UMD, &
-          LOGLAW_HEAT_FLUX_MODEL, ABL_HEAT_FLUX_MODEL, RNG_EDDY_VISCOSITY, &
+          LOGLAW_HEAT_FLUX_MODEL, RNG_EDDY_VISCOSITY, &
           NS_ANALYTICAL_SOLUTION, NS_U_EXACT, NS_V_EXACT, NS_H_EXACT, SANDIA_DAT, SPECTRAL_OUTPUT, SANDIA_OUT, &
           FILL_EDGES, NATURAL_CONVECTION_MODEL, FORCED_CONVECTION_MODEL, RAYLEIGH_HEAT_FLUX_MODEL, YUAN_HEAT_FLUX_MODEL, &
-          WALE_VISCOSITY, TAU_WALL_IJ
+          WALE_VISCOSITY, TAU_WALL_IJ, ABL_WALL_MODEL
 
 CONTAINS
 
@@ -1257,21 +1257,20 @@ SUBROUTINE WALL_MODEL(SLIP_FACTOR,U_TAU,Y_PLUS,NU,S,Y_EXTERNAL_POINT,U_EXTERNAL_
 
 REAL(EB), INTENT(OUT) :: SLIP_FACTOR,U_TAU,Y_PLUS
 ! S is the "sandgrain" roughness length scale (Pope's notation)
-! Y_EP is the distance from the wall to the "external point" where the interpolated velocity lives; Y_EP=DN/2 for Cartesian grids
-! Y_FP is the distance from the wall to the "forcing point" where the forced velocity lives
+! Y_EXTERNAL_POINT is the distance from the wall to the "external point"; DN/2 for Cartesian grids
+! Y_FORCING_POINT  is the distance from the wall to the "forcing point" where the forced velocity lives
 REAL(EB), INTENT(IN) :: NU,S,Y_EXTERNAL_POINT,U_EXTERNAL_POINT
 REAL(EB), OPTIONAL, INTENT(IN) :: Y_FORCING_POINT
 REAL(EB), OPTIONAL, INTENT(OUT) :: U_FORCING_POINT,DUDY_FORCING_POINT
 
-REAL(EB), PARAMETER :: RKAPPA=1._EB/0.41_EB ! 1/von Karman constant
-REAL(EB), PARAMETER :: B=5.2_EB,BTILDE_ROUGH=8.5_EB,BTILDE_MAX=9.5_EB ! see Pope (2000) pp. 294,297,298
+REAL(EB), PARAMETER :: B=5.2_EB,BTILDE_MAX=9.5_EB ! BTILDE_ROUGH=8.5 set in GLOBAL_CONSTANTS; see Pope (2000) pp. 294,297,298
 REAL(EB), PARAMETER :: S0=1._EB,S1=5.83_EB,S2=30._EB ! approx piece-wise function for Fig. 7.24, Pope (2000) p. 297
 REAL(EB), PARAMETER :: Y1=5._EB
 REAL(EB), PARAMETER :: U1=5._EB
 REAL(EB), PARAMETER :: EPS=1.E-10_EB
 INTEGER, PARAMETER :: LAMINAR_SMOOTH=1,TURBULENT_SMOOTH=2,TURBULENT_ROUGH=3
 
-REAL(EB) :: U,Y_CELL_CENTER,TAU_W,BTILDE,DELTA_NU,S_PLUS,DUDY_WALL,DY
+REAL(EB) :: U,Y_CELL_CENTER,TAU_W,BTILDE,DELTA_NU,S_PLUS,DUDY,DY,RKAPPA
 INTEGER :: ITER,BOUNDARY_LAYER_CODE
 
 ! References:
@@ -1280,11 +1279,12 @@ INTEGER :: ITER,BOUNDARY_LAYER_CODE
 
 ! Step 1: compute laminar (DNS) stress, and initial guess for LES stress
 
+RKAPPA = 1._EB/VON_KARMAN_CONSTANT
 DY = 2._EB*Y_EXTERNAL_POINT
 Y_CELL_CENTER = Y_EXTERNAL_POINT
 U = U_EXTERNAL_POINT
-DUDY_WALL = ABS(U)/Y_CELL_CENTER
-TAU_W = NU*DUDY_WALL                    ! actually tau_w/rho
+DUDY = ABS(U)/Y_CELL_CENTER
+TAU_W = NU*DUDY                         ! actually tau_w/rho
 U_TAU = SQRT(ABS(TAU_W))                ! friction velocity
 DELTA_NU = NU/(U_TAU+EPS)               ! viscous length scale
 Y_PLUS = Y_CELL_CENTER/(DELTA_NU+EPS)
@@ -1309,13 +1309,13 @@ LES_IF: IF (SIM_MODE/=DNS_MODE) THEN
             ! viscous sublayer
             TAU_W = ( U/Y_PLUS )**2
             U_TAU = SQRT(TAU_W)
-            DUDY_WALL = ABS(U)/Y_CELL_CENTER
+            DUDY = ABS(U)/Y_CELL_CENTER
             BOUNDARY_LAYER_CODE = LAMINAR_SMOOTH
          ELSE
             ! log layer
             TAU_W = ( U/(RKAPPA*LOG(Y_PLUS)+B) )**2
             U_TAU = SQRT(TAU_W)
-            DUDY_WALL = U_TAU*RKAPPA/Y_CELL_CENTER
+            DUDY = U_TAU*RKAPPA/Y_CELL_CENTER
             BOUNDARY_LAYER_CODE = TURBULENT_SMOOTH
          ENDIF
       ELSE
@@ -1330,7 +1330,7 @@ LES_IF: IF (SIM_MODE/=DNS_MODE) THEN
          Y_PLUS = Y_CELL_CENTER/S
          TAU_W = ( U/(RKAPPA*LOG(Y_PLUS)+BTILDE) )**2  ! Pope (2000) p. 297, Eq. (7.121)
          U_TAU = SQRT(TAU_W)
-         DUDY_WALL = U_TAU*RKAPPA/Y_CELL_CENTER
+         DUDY = U_TAU*RKAPPA/Y_CELL_CENTER
          BOUNDARY_LAYER_CODE = TURBULENT_ROUGH
       ENDIF
 
@@ -1347,10 +1347,10 @@ LES_IF: IF (SIM_MODE/=DNS_MODE) THEN
    ! The slip factor (SF) is based on the following approximation to the wall gradient
    ! (note that u0 is the ghost cell value of the streamwise velocity component and
    ! y is the wall-normal direction):
-   ! dudy_wall = (u-u0)/dy = (u-SF*u)/dy = u/dy*(1-SF) => SF = 1 - dudy_wall*dy/u
-   ! In this routine, dudy_wall is sampled from the wall model at the location y_cell_center.
+   ! DUDY = (u-u0)/dy = (u-SF*u)/dy = u/dy*(1-SF) => SF = 1 - DUDY*dy/u
+   ! In this routine, DUDY is sampled from the wall model at the location y_cell_center.
 
-   SLIP_FACTOR = MAX(-1._EB,MIN(1._EB,1._EB-DUDY_WALL*DY/(ABS(U)+EPS))) ! -1.0 <= SLIP_FACTOR <= 1.0
+   SLIP_FACTOR = MAX(-1._EB,MIN(1._EB,1._EB-DUDY*DY/(ABS(U)+EPS))) ! -1.0 <= SLIP_FACTOR <= 1.0
 
 ENDIF LES_IF
 
@@ -1372,6 +1372,91 @@ ENDIF
 
 END SUBROUTINE WALL_MODEL
 
+!> \brief Wall model (stress and heat flux) for atmospheric boundary layer.
+!>
+!> \param SLIP_FACTOR
+!> \param HTC heat transfer coefficint (W/m2/K)
+!> \param U_STAR friction velocity (m/s), equivalent to U_TAU in WALL_MODEL
+!> \param L local Obukhov length (m)
+!> \param U_TANG resolved streamwise tangential velocity (m/s)
+!> \param Z_0 aerodynamic roughness length (m)
+!> \param Z_AGL height above ground level of cell center (m)
+!> \param ZC absolute elevation of cell center (m)
+!> \param TMP_G gas temperature (K)
+!> \param TMP_S surface temperature (K)
+!> \param MU_IN dynamic viscosity of gas cell (kg/m/s)
+!> \param RHO_IN density of first off-wall gas phase cell (kg/m3)
+!> \param CP_IN specific heat of first off-wall gas cell(J/kg/K)
+!> \param K_IN thermal conductivity of first off-wall gas cell (W/m/K)
+
+SUBROUTINE ABL_WALL_MODEL(SLIP_FACTOR,HTC,U_STAR,L,U_TANG,Z_0,Z_AGL,ZC,TMP_G,TMP_S,MU_IN,RHO_IN,CP_IN,K_IN)
+
+USE PHYSICAL_FUNCTIONS, ONLY: GET_POTENTIAL_TEMPERATURE, MONIN_OBUKHOV_STABILITY_CORRECTIONS
+
+REAL(EB), INTENT(OUT) :: SLIP_FACTOR,HTC,U_STAR
+REAL(EB), INTENT(IN) :: U_TANG,Z_0,Z_AGL,ZC,TMP_G,TMP_S,MU_IN,RHO_IN,CP_IN,K_IN
+REAL(EB) :: KAPPA,TAU_W,L,NAT_LOG_ZPLUS,Q_DOT_PP_S,PSI_H,PSI_M,THETA_G,THETA_S,DTHETA,DUDZ,DZ
+INTEGER :: ITER,ABL_TYPE
+INTEGER, PARAMETER :: NEUTRAL_ABL=1,STABLE_ABL=2,UNSTABLE_ABL=3
+REAL(EB), PARAMETER :: EPS=1.E-6_EB
+
+! References:
+!
+! Stoll, R., Porte-Agel, F. (2008) Large-Eddy Simulation of the Stable Atmospheric
+! Boundary Layer using Dynamic Models with Different Averaging Schemes. Boundary-Layer
+! Meteorology, 126:1-28.
+
+! initial guesses
+
+SLIP_FACTOR = -1._EB
+TAU_W = MU_IN/RHO_IN*ABS(U_TANG)/Z_AGL              ! wall stress, actually tau_w/rho (m2/s2)
+U_STAR = SQRT(TAU_W)                                ! friction velocity (m/s)
+Q_DOT_PP_S = MU_IN/RHO_IN*RPR*(TMP_S-TMP_G)/Z_AGL   ! heat flux at the surface (m/s * K)
+
+ABL_TYPE = NEUTRAL_ABL
+L = 1.E6_EB ! Obukhov length (m)
+IF (Q_DOT_PP_S<-EPS) THEN
+   ABL_TYPE = STABLE_ABL
+ELSEIF (Q_DOT_PP_S>EPS) THEN
+   ABL_TYPE = UNSTABLE_ABL
+   L = -1.E6_EB ! Obukhov length (m)
+ENDIF
+
+IF (ABS(U_TANG)<EPS) THEN
+   ! quiescent boundary layer
+   U_STAR = 0._EB
+   HTC = MAX(1.52_EB*ABS(TMP_S-TMP_G)**ONTH, K_IN/Z_AGL)
+   RETURN
+ENDIF
+
+NAT_LOG_ZPLUS = LOG(Z_AGL/Z_0)
+KAPPA = VON_KARMAN_CONSTANT
+SELECT CASE (ABL_TYPE)
+   CASE (NEUTRAL_ABL)
+      U_STAR = ABS(U_TANG)*KAPPA/NAT_LOG_ZPLUS
+      HTC = 0._EB
+   CASE (STABLE_ABL,UNSTABLE_ABL)
+      THETA_G = GET_POTENTIAL_TEMPERATURE(TMP_G,ZC)
+      THETA_S = GET_POTENTIAL_TEMPERATURE(TMP_S,ZC-Z_AGL)
+      DTHETA = THETA_S-THETA_G
+      L = -U_STAR**3*THETA_G/(KAPPA*GRAV*Q_DOT_PP_S)  ! Obukhov length (m) initial guess
+      ! numerical tests suggest 3 iterations are sufficient for convergence to less than 1 % relative error
+      DO ITER=1,3
+         CALL MONIN_OBUKHOV_STABILITY_CORRECTIONS(PSI_M,PSI_H,Z_AGL,L)
+         IF (NAT_LOG_ZPLUS-PSI_M>TWO_EPSILON_EB) U_STAR = ABS(U_TANG)*KAPPA/(NAT_LOG_ZPLUS-PSI_M)
+         IF (NAT_LOG_ZPLUS-PSI_H>TWO_EPSILON_EB) Q_DOT_PP_S = DTHETA*U_STAR*KAPPA/(NAT_LOG_ZPLUS-PSI_H)
+         L = -U_STAR**3*THETA_G/(KAPPA*GRAV*Q_DOT_PP_S)
+      ENDDO
+      HTC = RHO_IN*CP_IN*Q_DOT_PP_S/(TMP_S-TMP_G)
+END SELECT
+
+HTC = MAX(HTC,K_IN/Z_AGL)
+DUDZ = U_STAR/(KAPPA*Z_AGL) ! slip factor is based on gradient at cell center position
+DZ = 2._EB*Z_AGL
+SLIP_FACTOR = MAX(-1._EB,MIN(1._EB,1._EB-DUDZ*DZ/(ABS(U_TANG)+EPS))) ! -1.0 <= SLIP_FACTOR <= 1.0
+
+END SUBROUTINE ABL_WALL_MODEL
+
 
 SUBROUTINE NATURAL_CONVECTION_MODEL(H_NATURAL,DELTA_TMP,C_VERTICAL,C_HORIZONTAL,SURF_GEOMETRY_INDEX,IOR,K_G,DN)
 
@@ -1382,7 +1467,7 @@ INTEGER, INTENT(IN) :: SURF_GEOMETRY_INDEX,IOR
 ! Calculate the HTC for natural/free convection (Holman, 1990, Table 7-2)
 
 SELECT CASE(SURF_GEOMETRY_INDEX)
-   CASE (SURF_CARTESIAN,SURF_BLOWING_PLATE)
+   CASE (SURF_CARTESIAN)
       SELECT CASE(ABS(IOR))
          CASE(0:2)
             H_NATURAL = C_VERTICAL*ABS(DELTA_TMP)**ONTH
@@ -1401,29 +1486,29 @@ END SELECT
 END SUBROUTINE NATURAL_CONVECTION_MODEL
 
 
-SUBROUTINE FORCED_CONVECTION_MODEL(H_FORCED,RE,K_G,CONV_LENGTH,SURF_GEOMETRY_INDEX)
+SUBROUTINE FORCED_CONVECTION_MODEL(H_FORCED,RE,K_G,PR_ONTH_IN,CONV_LENGTH,SURF_GEOMETRY_INDEX)
 
 REAL(EB), INTENT(OUT) :: H_FORCED
-REAL(EB), INTENT(IN) :: RE,K_G,CONV_LENGTH
+REAL(EB), INTENT(IN) :: RE,K_G,CONV_LENGTH,PR_ONTH_IN
 INTEGER, INTENT(IN) :: SURF_GEOMETRY_INDEX
 REAL(EB) :: NUSSELT
 
 SELECT CASE(SURF_GEOMETRY_INDEX)
-   CASE (SURF_CARTESIAN,SURF_BLOWING_PLATE)
+   CASE (SURF_CARTESIAN)
       ! Incropera and DeWitt, 3rd, 1990, Eq. 7.44
-      NUSSELT = 0.037_EB*RE**0.8_EB*PR_ONTH
+      NUSSELT = 0.037_EB*RE**0.8_EB*PR_ONTH_IN
    CASE (SURF_CYLINDRICAL)
       ! Incropera and DeWitt, 3rd, 1990, Eq. 7.55
       IF (RE >= 40._EB) THEN
-         NUSSELT = 0.683_EB*RE**0.466_EB*PR_ONTH
+         NUSSELT = 0.683_EB*RE**0.466_EB*PR_ONTH_IN
       ELSEIF (RE >= 4._EB) THEN
-         NUSSELT = 0.911_EB*RE**0.385_EB*PR_ONTH
+         NUSSELT = 0.911_EB*RE**0.385_EB*PR_ONTH_IN
       ELSE
-         NUSSELT = 0.989_EB*RE**0.330_EB*PR_ONTH
+         NUSSELT = 0.989_EB*RE**0.330_EB*PR_ONTH_IN
       ENDIF
    CASE (SURF_SPHERICAL)
       ! Incropera and DeWitt, 3rd, 1990, Eq. 7.59
-      NUSSELT = 2._EB + 0.6_EB*SQRT(RE)*PR_ONTH
+      NUSSELT = 2._EB + 0.6_EB*SQRT(RE)*PR_ONTH_IN
 END SELECT
 H_FORCED = MAX(1._EB,NUSSELT)*K_G/CONV_LENGTH
 
@@ -1582,47 +1667,6 @@ ENDIF
 H = RHO_G*U_TAU*CP_G/TPLUS
 
 END SUBROUTINE LOGLAW_HEAT_FLUX_MODEL
-
-
-SUBROUTINE ABL_HEAT_FLUX_MODEL(H,U_TAU,DZ,Z0,TMP_G,TMP_S,RHO,CP)
-
-REAL(EB), INTENT(OUT) :: H ! heat transfer coefficient
-REAL(EB), INTENT(IN) :: U_TAU,DZ,Z0,TMP_G,TMP_S,RHO,CP
-REAL(EB), PARAMETER :: KAPPA=0.41_EB ! von Karman constant
-REAL(EB) :: PSI_H,L,ZP,Q3S,A,B,C,DET
-
-! References:
-!
-! Stoll, R., Porte-Agel, F. (2008) Large-Eddy Simulation of the Stable Atmospheric
-! Boundary Layer using Dynamic Models with Different Averaging Schemes. Boundary-Layer
-! Meteorology, 126:1-28.
-
-ZP = 0.5_EB*DZ/Z0
-PSI_H = 0._EB
-
-IF (TMP_S<TMP_G) THEN ! stability correction needed
-
-   ! Stoll and Porte-Agel Eq. (27) may be rewritten in quadratic form as follows:
-   ! A*Q3S**2 + B*Q3S + C = 0
-
-   A = 7.8_EB*KAPPA*GRAV
-   B = -U_TAU**3*TMP_G*LOG(ZP)
-   C = (TMP_S-TMP_G)*U_TAU**4*KAPPA*GRAV   ! negative, so DET should be positive
-   DET = B**2-4._EB*A*C
-   IF (DET>TWO_EPSILON_EB) THEN
-      Q3S = (-B-SQRT(DET))/(2._EB*A)       ! take negative root, else Q3S>0, which we know is not correct here
-      L = -U_TAU**3*TMP_G/(KAPPA*GRAV*Q3S) ! Eq. (28), Obukhov length
-      PSI_H = -3.9_EB*DZ/MAX(L,MICRON)     ! Eq. (30), 3.9 = 7.8*0.5
-   ELSE
-      Q3S = 0._EB
-      L = 0._EB
-   ENDIF
-
-ENDIF
-
-H = RHO*CP*U_TAU*KAPPA/(LOG(ZP)-PSI_H)
-
-END SUBROUTINE ABL_HEAT_FLUX_MODEL
 
 
 REAL(EB) FUNCTION VELTAN2D(U_VELO,U_SURF,NN,DN,DIVU,GRADU,GRADP,TAU_IJ,DT,RRHO,MU,I_VEL)

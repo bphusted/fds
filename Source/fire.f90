@@ -403,7 +403,7 @@ ENDDO INTEGRATION_LOOP
 
 ! Compute heat release rate
 
-Q_OUT = -RHO_IN*SUM(SPECIES_MIXTURE%H_F*(ZZ_GET-ZZ_0))/DT ! FDS Tech Guide (5.44)
+Q_OUT = -RHO_IN*SUM(SPECIES_MIXTURE%H_F*(ZZ_GET-ZZ_0))/DT ! FDS Tech Guide (5.47)
 
 ! Extinction model
 
@@ -1277,7 +1277,7 @@ SPEC_LOOP: DO NS = 1, N_TRACKED_SPECIES
             H_MASS = 2._EB*D_AIR/SM%MEAN_DIAMETER
             N_PART = Y_COND * RHO_G / (FOTHPI* SS%DENSITY_LIQUID * (0.5_EB*SM%MEAN_DIAMETER)**3)
             N_PART = MAX(NUCLEATION_SITES,N_PART)
-            B_NUMBER = LOG(1._EB + ABS(Y_CLOUD - Y_GAS) / MAX(0.001_EB, (1._EB - Y_CLOUD)))
+            B_NUMBER = LOG(1._EB + ABS(Y_CLOUD - Y_GAS) / MAX(DY_MIN_BLOWING, (1._EB - Y_CLOUD)))
             Y_1 = ZZ_INTERIM(I,J,K,NS)
             IF (Y_GAS < Y_CLOUD) THEN
                ZZ_INTERIM(I,J,K,NS) = ZZ_INTERIM(I,J,K,NS) + &
