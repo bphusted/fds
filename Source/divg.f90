@@ -241,6 +241,9 @@ SPECIES_GT_1_IF: IF (N_TOTAL_SCALARS>1) THEN
    ! Ensure RHO_D terms sum to zero over all species.  Gather error into largest mass fraction present.
 
    IF (SIM_MODE==DNS_MODE .OR. SIM_MODE==LES_MODE) THEN
+      ! for VLES and SVLES modes, the diffusivity is the same for all species
+      ! so, as long as ZZP is realizable, the sum of diffusive fluxes will be zero
+      ! and the flux corrections below are not required
 
       !$OMP PARALLEL DO PRIVATE(N) SCHEDULE(STATIC)
       DO K=0,KBAR
@@ -605,6 +608,8 @@ ELSE
    WW=>WS
 ENDIF
 
+IF (STORE_DIVERGENCE_CORRECTION) DCOR=0._EB
+
 ! Compute U_DOT_DEL_RHO_H_S and add to other enthalpy equation source terms
 
 CONST_GAMMA_IF_1: IF (.NOT.CONSTANT_SPECIFIC_HEAT_RATIO) THEN
@@ -616,6 +621,7 @@ CONST_GAMMA_IF_1: IF (.NOT.CONSTANT_SPECIFIC_HEAT_RATIO) THEN
          DO I=1,IBAR
             IF (SOLID(CELL_INDEX(I,J,K))) CYCLE
             DP(I,J,K) = DP(I,J,K) - U_DOT_DEL_RHO_H_S(I,J,K)
+            IF (STORE_DIVERGENCE_CORRECTION) DCOR(I,J,K) = - U_DOT_DEL_RHO_H_S(I,J,K)
          ENDDO
       ENDDO
    ENDDO
@@ -650,6 +656,7 @@ ELSE
             IF (SOLID(CELL_INDEX(I,J,K))) CYCLE
             RTRM(I,J,K) = R_H_G(I,J,K)/RHOP(I,J,K)
             DP(I,J,K) = RTRM(I,J,K)*DP(I,J,K)
+            IF (STORE_DIVERGENCE_CORRECTION) DCOR(I,J,K) = RTRM(I,J,K)*DCOR(I,J,K)
          ENDDO
       ENDDO
    ENDDO
@@ -675,6 +682,10 @@ CONST_GAMMA_IF_2: IF (.NOT.CONSTANT_SPECIFIC_HEAT_RATIO) THEN
                CALL GET_SENSIBLE_ENTHALPY_Z(N,TMP(I,J,K),H_S)
                DP(I,J,K) = DP(I,J,K) + (SM%RCON/RSUM(I,J,K) - H_S*R_H_G(I,J,K))* &
                     ( DEL_RHO_D_DEL_Z(I,J,K,N) - U_DOT_DEL_RHO_Z(I,J,K) )/RHOP(I,J,K)
+
+               IF (STORE_DIVERGENCE_CORRECTION) THEN
+                  DCOR(I,J,K) = DCOR(I,J,K) - (SM%RCON/RSUM(I,J,K) - H_S*R_H_G(I,J,K))*U_DOT_DEL_RHO_Z(I,J,K)/RHOP(I,J,K)
+               ENDIF
             ENDDO
          ENDDO
       ENDDO
@@ -1258,7 +1269,7 @@ PREDICT_NORMALS: IF (PREDICTOR) THEN
 
             IF (SF%SPECIES_BC_INDEX==SPECIFIED_MASS_FLUX .OR. &
                 SF%SPECIES_BC_INDEX==INTERPOLATED_BC     .OR. &
-                WC%NODE_INDEX > 0                        .OR. &
+                WC%ONE_D%NODE_INDEX > 0                  .OR. &
                 ANY(SF%LEAK_PATH>0))                          &
                 CYCLE WALL_LOOP3
 
@@ -1407,7 +1418,7 @@ ELSE PREDICT_NORMALS
          SF => SURFACE(WC%SURF_INDEX)
          IF (SF%SPECIES_BC_INDEX==SPECIFIED_MASS_FLUX .OR. &
              SF%SPECIES_BC_INDEX==INTERPOLATED_BC     .OR. &
-             WC%NODE_INDEX > 0                        .OR. &
+             WC%ONE_D%NODE_INDEX > 0                  .OR. &
              ANY(SF%LEAK_PATH>0)) CYCLE
       ENDIF
       WC%ONE_D%U_NORMAL = WC%ONE_D%U_NORMAL_S
@@ -1472,23 +1483,23 @@ EVACUATION_PREDICTOR: IF (PREDICTOR) THEN
       DO I = 1,N_ZONE
          IF (.NOT.(P_ZONE(I)%EVACUATION)) CYCLE
          IF (P_ZONE(I)%MESH_INDEX==NM) THEN
-            N = I ! The ordinar number of the pressure zone of this main evacuation mesh
+            N = I ! The ordinal number of the pressure zone of this main evacuation mesh
             EXIT
          END IF
       END DO
       IF (N==0) THEN
          WRITE(LU_ERR,'(A,A)') 'ERROR FDS+Evac: Zone error, no pressure zone found for mesh ',TRIM(MESH_NAME(NM))
       END IF
-
+      
       U=0._EB; V=0._EB; W=0._EB; US=0._EB; VS=0._EB; WS=0._EB; FVX=0._EB; FVY=0._EB; FVZ=0._EB
       H=0._EB; HS=0._EB; KRES=0._EB; DDDT=0._EB; D=0._EB; DS=0._EB
       P_0=P_INF; TMP_0=TMPA
       PBAR=P_INF; PBAR_S=P_INF; R_PBAR=0._EB; D_PBAR_DT=0._EB; D_PBAR_DT_S=0._EB
       RHO=RHO_0(1); RHOS=RHO_0(1); TMP=TMPA
       USUM(:,NM) = 0.0_EB ; DSUM(:,NM) = 0.0_EB; PSUM(:,NM) = 0.0_EB
-      PRESSURE_ZONE = 0
+      PRESSURE_ZONE = -1
 
-      DO K=0,KBP1
+      ZONE_LOOP_EVAC: DO K=0,KBP1
          DO J=0,JBP1
             DO I=0,IBP1
                IF (PRESSURE_ZONE(I,J,K)==N) CYCLE
@@ -1496,8 +1507,18 @@ EVACUATION_PREDICTOR: IF (PREDICTOR) THEN
                     YC(J) - Y1 >=0._EB .AND. YC(J) < Y2 .AND. &
                     ZC(K) - Z1 >=0._EB .AND. ZC(K) < Z2) THEN
                   PRESSURE_ZONE(I,J,K) = N
-                  IF (.NOT.SOLID(CELL_INDEX(I,J,K))) CALL ASSIGN_PRESSURE_ZONE(NM,XC(I),YC(J),ZC(K),N,N_OVERLAP)
+                  IF (.NOT.SOLID(CELL_INDEX(I,J,K))) THEN
+                     CALL ASSIGN_PRESSURE_ZONE(NM,XC(I),YC(J),ZC(K),N,N_OVERLAP)
+                     EXIT ZONE_LOOP_EVAC
+                  ENDIF
                ENDIF
+            ENDDO
+         ENDDO
+      ENDDO ZONE_LOOP_EVAC
+      DO K=0,KBP1
+         DO J=0,JBP1
+            DO I=0,IBP1
+               PRESSURE_ZONE(I,J,K) = MAX(0,PRESSURE_ZONE(I,J,K))
             ENDDO
          ENDDO
       ENDDO
@@ -1518,6 +1539,7 @@ EVACUATION_PREDICTOR: IF (PREDICTOR) THEN
          KKG = WC%ONE_D%KKG
          IF (KK==1) WC%ONE_D%PRESSURE_ZONE = PRESSURE_ZONE(IIG,JJG,KKG)
       END DO
+
    END IF EVACUATION_NEW_FIELD
 END IF EVACUATION_PREDICTOR
 
