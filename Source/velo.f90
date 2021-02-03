@@ -28,14 +28,14 @@ CONTAINS
 SUBROUTINE COMPUTE_VISCOSITY(T,NM,APPLY_TO_ESTIMATED_VARIABLES)
 
 USE PHYSICAL_FUNCTIONS, ONLY: GET_VISCOSITY,LES_FILTER_WIDTH_FUNCTION,GET_POTENTIAL_TEMPERATURE,GET_CONDUCTIVITY,GET_SPECIFIC_HEAT
-USE TURBULENCE, ONLY: VARDEN_DYNSMAG,TEST_FILTER,FILL_EDGES,WALL_MODEL,RNG_EDDY_VISCOSITY,WALE_VISCOSITY,ABL_WALL_MODEL
+USE TURBULENCE, ONLY: VARDEN_DYNSMAG,TEST_FILTER,FILL_EDGES,WALL_MODEL,WALE_VISCOSITY,ABL_WALL_MODEL
 USE MATH_FUNCTIONS, ONLY:EVALUATE_RAMP
-USE COMPLEX_GEOMETRY, ONLY : CCREGION_COMPUTE_VISCOSITY
+USE CC_SCALARS_IBM, ONLY : CCREGION_COMPUTE_VISCOSITY
 REAL(EB), INTENT(IN) :: T
 INTEGER, INTENT(IN) :: NM
 LOGICAL, INTENT(IN) :: APPLY_TO_ESTIMATED_VARIABLES
 REAL(EB) :: ZZ_GET(1:N_TRACKED_SPECIES),NU_EDDY,DELTA,KSGS,U2,V2,W2,AA,A_IJ(3,3),BB,B_IJ(3,3),&
-            DUDX,DUDY,DUDZ,DVDX,DVDY,DVDZ,DWDX,DWDY,DWDZ,MU_EFF,SLIP_COEF,VEL_GAS,VEL_T,RAMP_T,TSI,&
+            DUDX,DUDY,DUDZ,DVDX,DVDY,DVDZ,DWDX,DWDY,DWDZ,SLIP_COEF,VEL_GAS,VEL_T,RAMP_T,TSI,&
             VDF,LS,THETA_0,THETA_1,THETA_2,DTDZBAR,WGT,T_NOW
 REAL(EB), PARAMETER :: RAPLUS=1._EB/26._EB, C_LS=0.76_EB
 INTEGER :: I,J,K,IIG,JJG,KKG,II,JJ,KK,IW,IOR
@@ -272,22 +272,6 @@ SELECT_TURB: SELECT CASE (TURB_MODEL)
 
                MU(I,J,K) = MU_DNS(I,J,K) + RHOP(I,J,K)*NU_EDDY
 
-            ENDDO
-         ENDDO
-      ENDDO
-
-   CASE (RNG) SELECT_TURB
-
-      ! A. Yakhot, S. A. Orszag, V. Yakhot, and M. Israeli. Renormalization Group Formulation of Large-Eddy Simulation.
-      ! Journal of Scientific Computing, 1(1):1-51, 1989.
-
-      DO K=1,KBAR
-         DO J=1,JBAR
-            DO I=1,IBAR
-               IF (SOLID(CELL_INDEX(I,J,K))) CYCLE
-               DELTA = LES_FILTER_WIDTH_FUNCTION(DX(I),DY(J),DZ(K))
-               CALL RNG_EDDY_VISCOSITY(MU_EFF,MU_DNS(I,J,K),RHOP(I,J,K),STRAIN_RATE(I,J,K),DELTA)
-               MU(I,J,K) = MU_EFF
             ENDDO
          ENDDO
       ENDDO
@@ -612,7 +596,8 @@ SUBROUTINE VELOCITY_FLUX(T,DT,NM,APPLY_TO_ESTIMATED_VARIABLES)
 ! Compute convective and diffusive terms of the momentum equations
 
 USE MATH_FUNCTIONS, ONLY: EVALUATE_RAMP
-USE COMPLEX_GEOMETRY, ONLY : ROTATED_CUBE_VELOCITY_FLUX,CCIBM_INTERP_FACE_VEL
+USE PHYSICAL_FUNCTIONS, ONLY: COMPUTE_WIND_COMPONENTS
+USE CC_SCALARS_IBM, ONLY : ROTATED_CUBE_VELOCITY_FLUX,CCIBM_INTERP_FACE_VEL
 INTEGER, INTENT(IN) :: NM
 REAL(EB), INTENT(IN) :: T,DT
 LOGICAL, INTENT(IN) :: APPLY_TO_ESTIMATED_VARIABLES
@@ -652,7 +637,7 @@ OMY => WORK5
 OMZ => WORK6
 
 ! Define velocities on gas cut-faces underlaying Cartesian faces.
-IF (CC_IBM .AND. .NOT.CC_VELOBC_FLAG) THEN
+IF (CC_IBM .AND. .NOT.CC_STRESS_METHOD) THEN
    T_USED(4) = T_USED(4) + CURRENT_TIME() - T_NOW
    CALL CCIBM_INTERP_FACE_VEL(DT,NM,.TRUE.)
    T_NOW=CURRENT_TIME()
@@ -684,15 +669,6 @@ DO K=0,KBAR
    ENDDO
 ENDDO
 !$OMP END PARALLEL DO
-
-! Wannier Flow (Stokes flow) test case
-
-IF (PERIODIC_TEST==5) THEN
-   OMX=0._EB
-   OMY=0._EB
-   OMZ=0._EB
-   OME_E = -1.E6_EB
-ENDIF
 
 ! Compute gravity components
 
@@ -897,7 +873,7 @@ IF (EVACUATION_ONLY(NM)) THEN
 END IF
 
 ! Restore previous substep velocities to gas cut-faces underlaying Cartesian faces.
-IF (CC_IBM .AND. .NOT.CC_VELOBC_FLAG) THEN
+IF (CC_IBM .AND. .NOT.CC_STRESS_METHOD) THEN
    T_USED(4) = T_USED(4) + CURRENT_TIME() - T_NOW
    CALL CCIBM_INTERP_FACE_VEL(DT,NM,.FALSE.)
    T_NOW=CURRENT_TIME()
@@ -905,7 +881,9 @@ ENDIF
 
 ! Additional force terms
 
-IF (ANY(MEAN_FORCING))             CALL MOMENTUM_NUDGING           ! Mean forcing
+IF (ANY(MEAN_FORCING) .OR. TEST_NEW_OPEN) CALL COMPUTE_WIND_COMPONENTS(T,NM)
+IF (ANY(MEAN_FORCING)                   ) CALL MOMENTUM_NUDGING    ! Mean forcing
+
 IF (ANY(ABS(FVEC)>TWO_EPSILON_EB)) CALL DIRECT_FORCE               ! Direct force
 IF (ANY(ABS(OVEC)>TWO_EPSILON_EB)) CALL CORIOLIS_FORCE             ! Coriolis force
 IF (PATCH_VELOCITY)                CALL PATCH_VELOCITY_FLUX        ! Specified patch velocity
@@ -916,12 +894,13 @@ T_USED(4) = T_USED(4) + CURRENT_TIME() - T_NOW
 
 CONTAINS
 
+
 SUBROUTINE MOMENTUM_NUDGING
 
 ! Add a force vector to the momentum equation that moves the flow field towards the direction of the mean flow.
 
 USE COMPLEX_GEOMETRY, ONLY : IBM_GASPHASE, IBM_FGSC
-REAL(EB) :: UBAR,VBAR,WBAR,VC,DU_FORCING,DV_FORCING,DW_FORCING,DT_LOC
+REAL(EB) :: VC,DU_FORCING,DV_FORCING,DW_FORCING,DT_LOC
 
 IF (ICYC==1) RETURN ! need one cycle to initialize forcing arrays
 
@@ -949,18 +928,17 @@ MEAN_FORCING_X: IF (MEAN_FORCING(1)) THEN
       ENDDO
    ENDIF PREDICTOR_IF_U
    DO K=1,KBAR
-      UBAR = U0*EVALUATE_RAMP(T,DUMMY,I_RAMP_U0_T)*EVALUATE_RAMP(ZC(K),DUMMY,I_RAMP_U0_Z)
-      DU_FORCING = (UBAR-U_MEAN_FORCING(K_MEAN_FORCING(K)))/DT_LOC
+      DU_FORCING = (U_WIND(K)-U_MEAN_FORCING(K_MEAN_FORCING(K)))/DT_LOC
       DO J=1,JBAR
          DO I=0,IBAR
             IF (.NOT.MEAN_FORCING_CELL(I,J,K)  ) CYCLE
             IF (.NOT.MEAN_FORCING_CELL(I+1,J,K)) CYCLE
             IF (APPLY_SPONGE_LAYER(1) .AND. I<SPONGE_CELLS) THEN
-               FVX(I,J,K) = FVX(I,J,K) - (UBAR-UU(I,J,K))/DT_LOC
+               FVX(I,J,K) = FVX(I,J,K) - (U_WIND(K)-UU(I,J,K))/DT_LOC
             ELSEIF (APPLY_SPONGE_LAYER(-1) .AND. I>IBAR-SPONGE_CELLS) THEN
-               FVX(I,J,K) = FVX(I,J,K) - (UBAR-UU(I,J,K))/DT_LOC
+               FVX(I,J,K) = FVX(I,J,K) - (U_WIND(K)-UU(I,J,K))/DT_LOC
             ELSE
-               FVX(I,J,K) = FVX(I,J,K) - DU_FORCING - (UBAR-UU(I,J,K))/DT_MEAN_FORCING_2
+               FVX(I,J,K) = FVX(I,J,K) - DU_FORCING - (U_WIND(K)-UU(I,J,K))/DT_MEAN_FORCING_2
             ENDIF
          ENDDO
       ENDDO
@@ -989,18 +967,17 @@ MEAN_FORCING_Y: IF (MEAN_FORCING(2)) THEN
       ENDDO
    ENDIF PREDICTOR_IF_V
    DO K=1,KBAR
-      VBAR = V0*EVALUATE_RAMP(T,DUMMY,I_RAMP_V0_T)*EVALUATE_RAMP(ZC(K),DUMMY,I_RAMP_V0_Z)
-      DV_FORCING = (VBAR-V_MEAN_FORCING(K_MEAN_FORCING(K)))/DT_LOC
+      DV_FORCING = (V_WIND(K)-V_MEAN_FORCING(K_MEAN_FORCING(K)))/DT_LOC
       DO J=0,JBAR
          DO I=1,IBAR
             IF (.NOT.MEAN_FORCING_CELL(I,J,K)  ) CYCLE
             IF (.NOT.MEAN_FORCING_CELL(I,J+1,K)) CYCLE
             IF (APPLY_SPONGE_LAYER(2) .AND. J<SPONGE_CELLS) THEN
-               FVY(I,J,K) = FVY(I,J,K) - (VBAR-VV(I,J,K))/DT_LOC
+               FVY(I,J,K) = FVY(I,J,K) - (V_WIND(K)-VV(I,J,K))/DT_LOC
             ELSEIF (APPLY_SPONGE_LAYER(-2) .AND. J>JBAR-SPONGE_CELLS) THEN
-               FVY(I,J,K) = FVY(I,J,K) - (VBAR-VV(I,J,K))/DT_LOC
+               FVY(I,J,K) = FVY(I,J,K) - (V_WIND(K)-VV(I,J,K))/DT_LOC
             ELSE
-               FVY(I,J,K) = FVY(I,J,K) - DV_FORCING - (VBAR-VV(I,J,K))/DT_MEAN_FORCING_2
+               FVY(I,J,K) = FVY(I,J,K) - DV_FORCING - (V_WIND(K)-VV(I,J,K))/DT_MEAN_FORCING_2
             ENDIF
          ENDDO
       ENDDO
@@ -1029,18 +1006,17 @@ MEAN_FORCING_Z: IF (MEAN_FORCING(3)) THEN
       ENDDO
    ENDIF PREDICTOR_IF_W
    DO K=1,KBM1
-      WBAR = W0*EVALUATE_RAMP(T,DUMMY,I_RAMP_W0_T)*EVALUATE_RAMP(ZC(K),DUMMY,I_RAMP_W0_Z)
-      DW_FORCING = (WBAR-W_MEAN_FORCING(K_MEAN_FORCING(K)))/DT_LOC
+      DW_FORCING = (W_WIND(K)-W_MEAN_FORCING(K_MEAN_FORCING(K)))/DT_LOC
       DO J=1,JBAR
          DO I=1,IBAR
             IF (.NOT.MEAN_FORCING_CELL(I,J,K)  ) CYCLE
             IF (.NOT.MEAN_FORCING_CELL(I,J,K+1)) CYCLE
             IF (APPLY_SPONGE_LAYER(3) .AND. K<SPONGE_CELLS) THEN
-               FVZ(I,J,K) = FVZ(I,J,K) - (WBAR-WW(I,J,K))/DT_LOC
+               FVZ(I,J,K) = FVZ(I,J,K) - (W_WIND(K)-WW(I,J,K))/DT_LOC
             ELSEIF (APPLY_SPONGE_LAYER(-3) .AND. K>KBAR-SPONGE_CELLS) THEN
-               FVZ(I,J,K) = FVZ(I,J,K) - (WBAR-WW(I,J,K))/DT_LOC
+               FVZ(I,J,K) = FVZ(I,J,K) - (W_WIND(K)-WW(I,J,K))/DT_LOC
             ELSE
-               FVZ(I,J,K) = FVZ(I,J,K) - DW_FORCING - (WBAR-WW(I,J,K))/DT_MEAN_FORCING_2
+               FVZ(I,J,K) = FVZ(I,J,K) - DW_FORCING - (W_WIND(K)-WW(I,J,K))/DT_MEAN_FORCING_2
             ENDIF
          ENDDO
       ENDDO
@@ -1704,7 +1680,7 @@ SUBROUTINE VELOCITY_PREDICTOR(T,DT,DT_NEW,NM)
 
 USE TURBULENCE, ONLY: COMPRESSION_WAVE
 USE MANUFACTURED_SOLUTIONS, ONLY: UF_MMS,WF_MMS,VD2D_MMS_U,VD2D_MMS_V
-USE COMPLEX_GEOMETRY, ONLY : CCIBM_VELOCITY_NO_GRADH
+USE CC_SCALARS_IBM, ONLY : CCIBM_VELOCITY_NO_GRADH
 
 ! Estimates the velocity components at the next time step
 
@@ -1801,7 +1777,7 @@ SUBROUTINE VELOCITY_CORRECTOR(T,DT,NM)
 
 USE TURBULENCE, ONLY: COMPRESSION_WAVE
 USE MANUFACTURED_SOLUTIONS, ONLY: UF_MMS,WF_MMS,VD2D_MMS_U,VD2D_MMS_V
-USE COMPLEX_GEOMETRY, ONLY : CCIBM_VELOCITY_NO_GRADH
+USE CC_SCALARS_IBM, ONLY : CCIBM_VELOCITY_NO_GRADH
 
 ! Correct the velocity components
 
@@ -1904,16 +1880,16 @@ SUBROUTINE VELOCITY_BC(T,NM,APPLY_TO_ESTIMATED_VARIABLES)
 ! Assert tangential velocity boundary conditions
 
 USE MATH_FUNCTIONS, ONLY: EVALUATE_RAMP
-USE TURBULENCE, ONLY: WALL_MODEL,WANNIER_FLOW,ABL_WALL_MODEL
+USE TURBULENCE, ONLY: WALL_MODEL,ABL_WALL_MODEL
 USE PHYSICAL_FUNCTIONS, ONLY: GET_CONDUCTIVITY,GET_SPECIFIC_HEAT
-USE COMPLEX_GEOMETRY, ONLY: CCIBM_VELOCITY_BC
+USE CC_SCALARS_IBM, ONLY: CCIBM_VELOCITY_BC
 REAL(EB), INTENT(IN) :: T
 INTEGER, INTENT(IN) :: NM
 LOGICAL, INTENT(IN) :: APPLY_TO_ESTIMATED_VARIABLES
 REAL(EB) :: MUA,TSI,WGT,T_NOW,RAMP_T,OMW,MU_WALL,RHO_WALL,SLIP_COEF,VEL_T, &
             UUP(2),UUM(2),DXX(2),MU_DUIDXJ(-2:2),DUIDXJ(-2:2),PROFILE_FACTOR,VEL_GAS,VEL_GHOST, &
             MU_DUIDXJ_USE(2),DUIDXJ_USE(2),VEL_EDDY,U_TAU,Y_PLUS,&
-            TMP_F,TMP_G,K_G,CP_G,LOB,HTC,ZZ_GET(1:N_TRACKED_SPECIES),UBAR,VBAR,WBAR,DUMMY,U_NORM
+            TMP_F,TMP_G,K_G,CP_G,LOB,HTC,ZZ_GET(1:N_TRACKED_SPECIES),U_NORM,DUMMY
 INTEGER :: I,J,K,NOM(2),IIO(2),JJO(2),KKO(2),IE,II,JJ,KK,IEC,IOR,IWM,IWP,ICMM,ICMP,ICPM,ICPP,IC,ICD,ICDO,IVL,I_SGN,IS, &
            VELOCITY_BC_INDEX,IIGM,JJGM,KKGM,IIGP,JJGP,KKGP,SURF_INDEXM,SURF_INDEXP,ITMP,ICD_SGN,ICDO_SGN, &
            BOUNDARY_TYPE_M,BOUNDARY_TYPE_P,IS2,IWPI,IWMI,VENT_INDEX
@@ -2147,6 +2123,51 @@ EDGE_LOOP: DO IE=1,N_EDGES
 
          IF (BOUNDARY_TYPE_M==NULL_BOUNDARY .AND. BOUNDARY_TYPE_P==NULL_BOUNDARY) CYCLE ORIENTATION_LOOP
 
+         ! Set up synthetic eddy method
+
+         SYNTHETIC_EDDY_METHOD = .FALSE.
+         IF (IWM>0 .AND. IWP>0) THEN
+            IF (WCM%VENT_INDEX==WCP%VENT_INDEX) THEN
+               IF (WCM%VENT_INDEX>0) THEN
+                  VT=>VENTS(WCM%VENT_INDEX)
+                  IF (VT%N_EDDY>0) SYNTHETIC_EDDY_METHOD=.TRUE.
+               ENDIF
+            ENDIF
+         ENDIF
+
+         VEL_EDDY = 0._EB
+         SYNTHETIC_EDDY_IF_1: IF (SYNTHETIC_EDDY_METHOD) THEN
+            IS_SELECT_1: SELECT CASE(IS) ! unsigned vent orientation
+               CASE(1) ! yz plane
+                  SELECT CASE(IEC) ! edge orientation
+                     CASE(2)
+                        IF (ICD==1) VEL_EDDY = 0.5_EB*(VT%U_EDDY(JJ,KK)+VT%U_EDDY(JJ,KK+1))
+                        IF (ICD==2) VEL_EDDY = 0.5_EB*(VT%W_EDDY(JJ,KK)+VT%W_EDDY(JJ,KK+1))
+                     CASE(3)
+                        IF (ICD==1) VEL_EDDY = 0.5_EB*(VT%V_EDDY(JJ,KK)+VT%V_EDDY(JJ+1,KK))
+                        IF (ICD==2) VEL_EDDY = 0.5_EB*(VT%U_EDDY(JJ,KK)+VT%U_EDDY(JJ+1,KK))
+                  END SELECT
+               CASE(2) ! zx plane
+                  SELECT CASE(IEC)
+                     CASE(3)
+                        IF (ICD==1) VEL_EDDY = 0.5_EB*(VT%V_EDDY(II,KK)+VT%V_EDDY(II+1,KK))
+                        IF (ICD==2) VEL_EDDY = 0.5_EB*(VT%U_EDDY(II,KK)+VT%U_EDDY(II+1,KK))
+                     CASE(1)
+                        IF (ICD==1) VEL_EDDY = 0.5_EB*(VT%W_EDDY(II,KK)+VT%W_EDDY(II,KK+1))
+                        IF (ICD==2) VEL_EDDY = 0.5_EB*(VT%V_EDDY(II,KK)+VT%V_EDDY(II,KK+1))
+                  END SELECT
+               CASE(3) ! xy plane
+                  SELECT CASE(IEC)
+                     CASE(1)
+                        IF (ICD==1) VEL_EDDY = 0.5_EB*(VT%W_EDDY(II,JJ)+VT%W_EDDY(II,JJ+1))
+                        IF (ICD==2) VEL_EDDY = 0.5_EB*(VT%V_EDDY(II,JJ)+VT%V_EDDY(II,JJ+1))
+                     CASE(2)
+                        IF (ICD==1) VEL_EDDY = 0.5_EB*(VT%U_EDDY(II,JJ)+VT%U_EDDY(II+1,JJ))
+                        IF (ICD==2) VEL_EDDY = 0.5_EB*(VT%W_EDDY(II,JJ)+VT%W_EDDY(II+1,JJ))
+                  END SELECT
+            END SELECT IS_SELECT_1
+         ENDIF SYNTHETIC_EDDY_IF_1
+
          ! OPEN boundary conditions, both varieties, with and without a wind
 
          OPEN_AND_WIND_BC: IF ((IWM==0.OR.WALL(IWM)%BOUNDARY_TYPE==OPEN_BOUNDARY) .AND. &
@@ -2158,10 +2179,7 @@ EDGE_LOOP: DO IE=1,N_EDGES
             UPWIND_BOUNDARY = .FALSE.
             INFLOW_BOUNDARY = .FALSE.
 
-            IF (ANY(MEAN_FORCING)) THEN
-               UBAR = U0*EVALUATE_RAMP(T,DUMMY,I_RAMP_U0_T)*EVALUATE_RAMP(ZC(KK),DUMMY,I_RAMP_U0_Z)
-               VBAR = V0*EVALUATE_RAMP(T,DUMMY,I_RAMP_V0_T)*EVALUATE_RAMP(ZC(KK),DUMMY,I_RAMP_V0_Z)
-               WBAR = W0*EVALUATE_RAMP(T,DUMMY,I_RAMP_W0_T)*EVALUATE_RAMP(ZC(KK),DUMMY,I_RAMP_W0_Z)
+            IF (ANY(MEAN_FORCING) .OR. TEST_NEW_OPEN) THEN
                SELECT CASE(IEC)
                   CASE(1)
                      IF (JJ==0    .AND. IOR== 2) U_NORM = 0.5_EB*(VV(II,   0,KK) + VV(II,   0,KK+1))
@@ -2179,9 +2197,9 @@ EDGE_LOOP: DO IE=1,N_EDGES
                      IF (JJ==0    .AND. IOR== 2) U_NORM = 0.5_EB*(VV(II,   0,KK) + VV(II+1,   0,KK))
                      IF (JJ==JBAR .AND. IOR==-2) U_NORM = 0.5_EB*(VV(II,JBAR,KK) + VV(II+1,JBAR,KK))
                END SELECT
-               IF ((IOR==1.AND.UBAR>=0._EB)   .OR. (IOR==-1.AND.UBAR<=0._EB))   UPWIND_BOUNDARY = .TRUE.
-               IF ((IOR==2.AND.VBAR>=0._EB)   .OR. (IOR==-2.AND.VBAR<=0._EB))   UPWIND_BOUNDARY = .TRUE.
-               IF ((IOR==3.AND.WBAR>=0._EB)   .OR. (IOR==-3.AND.WBAR<=0._EB))   UPWIND_BOUNDARY = .TRUE.
+               IF ((IOR==1.AND.U_WIND(KK)>=0._EB)  .OR. (IOR==-1.AND.U_WIND(KK)<=0._EB)) UPWIND_BOUNDARY = .TRUE.
+               IF ((IOR==2.AND.V_WIND(KK)>=0._EB)  .OR. (IOR==-2.AND.V_WIND(KK)<=0._EB)) UPWIND_BOUNDARY = .TRUE.
+               IF ((IOR==3.AND.W_WIND(KK)>=0._EB)  .OR. (IOR==-3.AND.W_WIND(KK)<=0._EB)) UPWIND_BOUNDARY = .TRUE.
                IF ((IOR==1.AND.U_NORM>=0._EB) .OR. (IOR==-1.AND.U_NORM<=0._EB)) INFLOW_BOUNDARY = .TRUE.
                IF ((IOR==2.AND.U_NORM>=0._EB) .OR. (IOR==-2.AND.U_NORM<=0._EB)) INFLOW_BOUNDARY = .TRUE.
                IF ((IOR==3.AND.U_NORM>=0._EB) .OR. (IOR==-3.AND.U_NORM<=0._EB)) INFLOW_BOUNDARY = .TRUE.
@@ -2211,20 +2229,20 @@ EDGE_LOOP: DO IE=1,N_EDGES
 
                SELECT CASE(IEC)
                   CASE(1)
-                     IF (JJ==0    .AND. IOR== 2) WW(II,0,KK)    = WBAR
-                     IF (JJ==JBAR .AND. IOR==-2) WW(II,JBP1,KK) = WBAR
-                     IF (KK==0    .AND. IOR== 3) VV(II,JJ,0)    = VBAR
-                     IF (KK==KBAR .AND. IOR==-3) VV(II,JJ,KBP1) = VBAR
+                     IF (JJ==0    .AND. IOR== 2) WW(II,0,KK)    = W_WIND(KK)
+                     IF (JJ==JBAR .AND. IOR==-2) WW(II,JBP1,KK) = W_WIND(KK)
+                     IF (KK==0    .AND. IOR== 3) VV(II,JJ,0)    = V_WIND(KK)
+                     IF (KK==KBAR .AND. IOR==-3) VV(II,JJ,KBP1) = V_WIND(KK)
                   CASE(2)
-                     IF (II==0    .AND. IOR== 1) WW(0,JJ,KK)    = WBAR
-                     IF (II==IBAR .AND. IOR==-1) WW(IBP1,JJ,KK) = WBAR
-                     IF (KK==0    .AND. IOR== 3) UU(II,JJ,0)    = UBAR
-                     IF (KK==KBAR .AND. IOR==-3) UU(II,JJ,KBP1) = UBAR
+                     IF (II==0    .AND. IOR== 1) WW(0,JJ,KK)    = W_WIND(KK)
+                     IF (II==IBAR .AND. IOR==-1) WW(IBP1,JJ,KK) = W_WIND(KK)
+                     IF (KK==0    .AND. IOR== 3) UU(II,JJ,0)    = U_WIND(KK)
+                     IF (KK==KBAR .AND. IOR==-3) UU(II,JJ,KBP1) = U_WIND(KK)
                   CASE(3)
-                     IF (II==0    .AND. IOR== 1) VV(0,JJ,KK)    = VBAR
-                     IF (II==IBAR .AND. IOR==-1) VV(IBP1,JJ,KK) = VBAR
-                     IF (JJ==0    .AND. IOR== 2) UU(II,0,KK)    = UBAR
-                     IF (JJ==JBAR .AND. IOR==-2) UU(II,JBP1,KK) = UBAR
+                     IF (II==0    .AND. IOR== 1) VV(0,JJ,KK)    = V_WIND(KK)
+                     IF (II==IBAR .AND. IOR==-1) VV(IBP1,JJ,KK) = V_WIND(KK)
+                     IF (JJ==0    .AND. IOR== 2) UU(II,0,KK)    = U_WIND(KK)
+                     IF (JJ==JBAR .AND. IOR==-2) UU(II,JBP1,KK) = U_WIND(KK)
                END SELECT
 
             ENDIF WIND_NO_WIND_IF
@@ -2305,15 +2323,13 @@ EDGE_LOOP: DO IE=1,N_EDGES
 
             MUA = 0.5_EB*(MU(IIGM,JJGM,KKGM) + MU(IIGP,JJGP,KKGP))
 
-            ! Set up synthetic eddy method (experimental)
+            ! Check for HVAC tangential velocity
 
-            SYNTHETIC_EDDY_METHOD = .FALSE.
             HVAC_TANGENTIAL = .FALSE.
             IF (IWM>0 .AND. IWP>0) THEN
                IF (WCM%VENT_INDEX==WCP%VENT_INDEX) THEN
                   IF (WCM%VENT_INDEX>0) THEN
                      VT=>VENTS(WCM%VENT_INDEX)
-                     IF (VT%N_EDDY>0) SYNTHETIC_EDDY_METHOD=.TRUE.
                      IF (ALL(VT%UVW > -1.E12_EB) .AND. VT%NODE_INDEX > 0) HVAC_TANGENTIAL = .TRUE.
                   ENDIF
                ENDIF
@@ -2321,41 +2337,9 @@ EDGE_LOOP: DO IE=1,N_EDGES
 
             ! Determine if there is a tangential velocity component
 
-            VEL_T_IF: IF (.NOT.SF%SPECIFIED_TANGENTIAL_VELOCITY .AND. .NOT.SYNTHETIC_EDDY_METHOD .AND. .NOT. HVAC_TANGENTIAL) THEN
+            VEL_T_IF: IF (.NOT.SF%SPECIFIED_TANGENTIAL_VELOCITY .AND. .NOT.SYNTHETIC_EDDY_METHOD .AND. .NOT.HVAC_TANGENTIAL) THEN
                VEL_T = 0._EB
             ELSE VEL_T_IF
-               VEL_EDDY = 0._EB
-               SYNTHETIC_EDDY_IF: IF (SYNTHETIC_EDDY_METHOD) THEN
-                  IS_SELECT: SELECT CASE(IS) ! unsigned vent orientation
-                     CASE(1) ! yz plane
-                        SELECT CASE(IEC) ! edge orientation
-                           CASE(2)
-                              IF (ICD==1) VEL_EDDY = 0.5_EB*(VT%U_EDDY(JJ,KK)+VT%U_EDDY(JJ,KK+1))
-                              IF (ICD==2) VEL_EDDY = 0.5_EB*(VT%W_EDDY(JJ,KK)+VT%W_EDDY(JJ,KK+1))
-                           CASE(3)
-                              IF (ICD==1) VEL_EDDY = 0.5_EB*(VT%V_EDDY(JJ,KK)+VT%V_EDDY(JJ+1,KK))
-                              IF (ICD==2) VEL_EDDY = 0.5_EB*(VT%U_EDDY(JJ,KK)+VT%U_EDDY(JJ+1,KK))
-                        END SELECT
-                     CASE(2) ! zx plane
-                        SELECT CASE(IEC)
-                           CASE(3)
-                              IF (ICD==1) VEL_EDDY = 0.5_EB*(VT%V_EDDY(II,KK)+VT%V_EDDY(II+1,KK))
-                              IF (ICD==2) VEL_EDDY = 0.5_EB*(VT%U_EDDY(II,KK)+VT%U_EDDY(II+1,KK))
-                           CASE(1)
-                              IF (ICD==1) VEL_EDDY = 0.5_EB*(VT%W_EDDY(II,KK)+VT%W_EDDY(II,KK+1))
-                              IF (ICD==2) VEL_EDDY = 0.5_EB*(VT%V_EDDY(II,KK)+VT%V_EDDY(II,KK+1))
-                        END SELECT
-                     CASE(3) ! xy plane
-                        SELECT CASE(IEC)
-                           CASE(1)
-                              IF (ICD==1) VEL_EDDY = 0.5_EB*(VT%W_EDDY(II,JJ)+VT%W_EDDY(II,JJ+1))
-                              IF (ICD==2) VEL_EDDY = 0.5_EB*(VT%V_EDDY(II,JJ)+VT%V_EDDY(II,JJ+1))
-                           CASE(2)
-                              IF (ICD==1) VEL_EDDY = 0.5_EB*(VT%U_EDDY(II,JJ)+VT%U_EDDY(II+1,JJ))
-                              IF (ICD==2) VEL_EDDY = 0.5_EB*(VT%W_EDDY(II,JJ)+VT%W_EDDY(II+1,JJ))
-                        END SELECT
-                  END SELECT IS_SELECT
-               ENDIF SYNTHETIC_EDDY_IF
                IF (ABS(SF%T_IGN-T_BEGIN)<=SPACING(SF%T_IGN) .AND. SF%RAMP_INDEX(TIME_VELO)>=1) THEN
                   TSI = T
                ELSE
@@ -2379,6 +2363,7 @@ EDGE_LOOP: DO IE=1,N_EDGES
                ELSE
                   IF (SF%PROFILE/=0 .AND. SF%VEL>TWO_EPSILON_EB) &
                      PROFILE_FACTOR = ABS(0.5_EB*(WCM%ONE_D%U_NORMAL_0+WCP%ONE_D%U_NORMAL_0)/SF%VEL)
+                  IF (SF%RAMP_INDEX(VELO_PROF_Z)>0) PROFILE_FACTOR = EVALUATE_RAMP(ZC(KK),DUMMY,SF%RAMP_INDEX(VELO_PROF_Z))
                   RAMP_T = EVALUATE_RAMP(TSI,SF%TAU(TIME_VELO),SF%RAMP_INDEX(TIME_VELO))
                   IF (IEC==1 .OR. (IEC==2 .AND. ICD==2)) VEL_T = RAMP_T*(PROFILE_FACTOR*(SF%VEL_T(2) + VEL_EDDY))
                   IF (IEC==3 .OR. (IEC==2 .AND. ICD==1)) VEL_T = RAMP_T*(PROFILE_FACTOR*(SF%VEL_T(1) + VEL_EDDY))
@@ -2406,19 +2391,6 @@ EDGE_LOOP: DO IE=1,N_EDGES
                      ALTERED_GRADIENT(ICD_SGN) = .TRUE.
 
                   CASE (NO_SLIP_BC) BOUNDARY_CONDITION
-
-                     WANNIER_BC: IF (PERIODIC_TEST==5) THEN
-                        SELECT CASE(IOR)
-                           CASE( 1)
-                              VEL_T = WANNIER_FLOW(X(II),Z(KK),2)
-                           CASE(-1)
-                              VEL_T = WANNIER_FLOW(X(II),Z(KK),2)
-                           CASE( 3)
-                              VEL_T = WANNIER_FLOW(X(II),Z(KK),1)
-                           CASE(-3)
-                              VEL_T = WANNIER_FLOW(X(II),Z(KK),1)
-                        END SELECT
-                     ENDIF WANNIER_BC
 
                      VEL_GHOST = 2._EB*VEL_T - VEL_GAS
                      DUIDXJ(ICD_SGN) = I_SGN*(VEL_GAS-VEL_GHOST)/DXX(ICD)
@@ -2656,7 +2628,7 @@ ENDIF
 
 T_USED(4)=T_USED(4)+CURRENT_TIME()-T_NOW
 
-IF(CC_IBM .AND. CC_VELOBC_FLAG) CALL CCIBM_VELOCITY_BC(T,NM,APPLY_TO_ESTIMATED_VARIABLES)
+IF(CC_IBM .AND. CC_STRESS_METHOD) CALL CCIBM_VELOCITY_BC(T,NM,APPLY_TO_ESTIMATED_VARIABLES)
 
 END SUBROUTINE VELOCITY_BC
 
@@ -3053,7 +3025,7 @@ SUBROUTINE CHECK_STABILITY(DT,DT_NEW,NM)
 
 INTEGER, INTENT(IN) :: NM
 REAL(EB), INTENT(IN) :: DT
-REAL(EB) :: UODX,VODY,WODZ,UVW,UVWMAX,R_DX2,MU_MAX,MUTRM,PART_CFL,MU_TMP, UVWMAX_TMP
+REAL(EB) :: UODX,VODY,WODZ,UVW,UVWMAX,R_DX2,MU_MAX,MUTRM,PART_CFL,MU_TMP, UVWMAX_TMP, DT_CLIP
 REAL(EB) :: DT_NEW(NMESHES)
 INTEGER  :: I,J,K,IW,IIG,JJG,KKG, ICFL_TMP, JCFL_TMP, KCFL_TMP
 TYPE(WALL_TYPE), POINTER :: WC=>NULL()
@@ -3154,6 +3126,21 @@ PARABOLIC_IF: IF (CHECK_VN) THEN
 
 ENDIF PARABOLIC_IF
 
+! Attempt DT restriction to avoid clippings
+
+DT_CLIP = HUGE(1._EB)
+IF (CLIP_RHOMIN .OR. CLIP_RHOMAX) THEN
+   IF (DT_RESTRICT_COUNT>=CLIP_DT_RESTRICTIONS_MAX) THEN
+      IF (CLIP_RHOMIN) WRITE(LU_ERR,'(A,F8.3,A,I0)') 'WARNING: Minimum density, ',RHOMIN,' kg/m3, clipped in Mesh ',NM
+      IF (CLIP_RHOMAX) WRITE(LU_ERR,'(A,F8.3,A,I0)') 'WARNING: Maximum density, ',RHOMAX,' kg/m3, clipped in Mesh ',NM
+   ELSE
+      CFL = HUGE(1._EB)
+      DT_CLIP = DT
+      DT_RESTRICT_COUNT = DT_RESTRICT_COUNT + 1
+      DT_RESTRICT_STORE = MAX(DT_RESTRICT_STORE,DT_RESTRICT_COUNT)
+   ENDIF
+ENDIF
+
 ! Adjust time step size if necessary
 
 IF ((CFL<CFL_MAX .AND. VN<VN_MAX .AND. PART_CFL<PARTICLE_CFL_MAX) .OR. LOCK_TIME_STEP) THEN
@@ -3168,7 +3155,8 @@ IF ((CFL<CFL_MAX .AND. VN<VN_MAX .AND. PART_CFL<PARTICLE_CFL_MAX) .OR. LOCK_TIME
 ELSE
    DT_NEW(NM) = 0.9_EB*MIN( CFL_MAX/MAX(UVWMAX,DT_EPS)               , &
                             VN_MAX/(2._EB*R_DX2*MAX(MUTRM,DT_EPS))   , &
-                            PARTICLE_CFL_MAX/MAX(PART_UVWMAX,DT_EPS))
+                            PARTICLE_CFL_MAX/MAX(PART_UVWMAX,DT_EPS) , &
+                            DT_CLIP)
    CHANGE_TIME_STEP_INDEX(NM) = -1
 ENDIF
 
@@ -3184,7 +3172,7 @@ REAL(EB), INTENT(IN) :: T
 INTEGER, INTENT(IN) :: NM
 REAL(EB), POINTER, DIMENSION(:,:,:) :: UU=>NULL(),VV=>NULL(),WW=>NULL(),RHOP=>NULL(),HP=>NULL(),RHMK=>NULL(),RRHO=>NULL()
 INTEGER  :: I,J,K,II,JJ,KK,IIG,JJG,KKG,IOR,IW
-REAL(EB) :: P_EXTERNAL,TSI,TIME_RAMP_FACTOR,DUMMY,UN,T_NOW
+REAL(EB) :: P_EXTERNAL,TSI,TIME_RAMP_FACTOR,DUMMY=0._EB,UN,T_NOW
 LOGICAL  :: INFLOW
 TYPE(VENTS_TYPE), POINTER :: VT=>NULL()
 TYPE(WALL_TYPE), POINTER :: WC=>NULL()

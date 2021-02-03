@@ -1702,27 +1702,6 @@ The Vreman eddy viscosity model \cite{Vreman:2004} is an efficient alternative t
 \end{figure}
 
 
-\subsection{Renormalization Group (\texorpdfstring{\textct{rng}}{rng})}
-\label{RNG_model}
-
-Renormalization group (RNG) theory \cite{Yakhot:1989} may be used to derive an effective eddy viscosity, $\mu_{\si{eff}} = \mu + \mu_t$, given by the cubic expression:
-\begin{equation}
-\label{eq:rng}
-\mu_{\si{eff}} = \mu\left[1 + H\left( \frac{\mu_s^2 \mu_{\si{eff}}}{\mu^3} - C \right)\right]^{1/3}
-\end{equation}
-Here, $\mu_s$ is the Smagorinsky eddy viscosity (with $C_s=0.2$) and $H(x)$ is the Heaviside function ($H(x)=x$ if $x>0$, $H(x)=0$ if $x\le0$).  The cutoff constant is tuned to match the high wavenumber modes in the CBC experiment for the $64^3$ case, $C=10$.
-
-\begin{figure}[h]
-   \begin{tabular*}{\textwidth}{l@{\extracolsep{\fill}}r}
-      \scalebox{1.0}{ \includegraphics[height=2.2in]{SCRIPT_FIGURES/rng_32_decay} } &
-      \scalebox{1.0}{ \includegraphics[height=2.2in]{SCRIPT_FIGURES/rng_32_spectra} } \\
-      \scalebox{1.0}{ \includegraphics[height=2.2in]{SCRIPT_FIGURES/rng_64_decay} } &
-      \scalebox{1.0}{ \includegraphics[height=2.2in]{SCRIPT_FIGURES/rng_64_spectra} }
-   \end{tabular*}
-   \caption[Integrated and spectral energy decay for CBC experiment using RNG model]{\label{fig_rng_cbc} RNG model results (analogous to Fig.~\ref{fig_cbc_energy}) for integrated kinetic energy (left) and spectra (right).}
-\end{figure}
-
-
 \subsection{WALE (\texorpdfstring{\textct{wale}}{wale})}
 \label{WALE_model}
 
@@ -2686,6 +2665,7 @@ Different variations of the case include the mesh resolution (20$^3$ and 100$^3$
 This example is similar to the one presented in Section~\ref{radiation_in_a_box}, except now the radiating plate is a polygon with sides of even length. The incident radiation heat flux from an $n$-sided polygon with temperature, $T=1000$~$^\circ$, is given by the formula~\cite{Siegel:1}:
 \be
    \dq_{\rm r}'' = \sigma \, T^4 \, \frac{n \, H}{\pi \, \sqrt{1+H^2}} \; \tan^{-1} \sqrt{\frac{R^2-H^2}{1+H^2}} \quad ; \quad H=\frac{h}{l} \quad ; \quad R=\frac{r}{l}
+   \label{plate_view_factor_eq}
 \ee
 where $h$ is the distance from the center of the polygon to the center point of any of its sides, $r$ is the distance from the center to any vertex, and $l$ is the distance from the center to the target surface along a perpendicular line. Figure~\ref{radiating_polygon_figure} displays calculations performed with a range of grid and angular resolutions. Note that the number of angles used to solve the RTE is quadrupled when the number of grid cells in each coordinate direction is doubled.
 
@@ -3472,12 +3452,9 @@ When using a non-predefined fuel, one may have heat of combustion data represent
 
 
 
-\section{Fractional Effective Dose (FED) and Fractional Irritant Concentration (FIC) (\texorpdfstring{\textct{FED\_FIC}}{FED\_FIC}) }
-\label{FED_FIC}
-\label{FED_FIC_SMIX}
+\section{Fractional Effective Dose (FED) and Fractional Irritant Concentration (FIC) ) }
 
-The Fractional Effective Dose index (FED), developed by Purser~\cite{SFPE:Purser}, is a commonly used measure of human incapacitation
-due to the combustion gases. The FED value is calculated as
+The Fractional Effective Dose index (FED), developed by Purser~\cite{SFPE:Purser}, is a commonly used measure of human incapacitation due to the combustion gases. The FED value is calculated as
 \be
 \mathrm{FED}_\mathrm{tot} = (\mathrm{FED}_\mathrm{CO} + \mathrm{FED}_\mathrm{CN} + \mathrm{FED}_\mathrm{NO_x} + \mathrm{FLD}_\mathrm{irr}) \times \mathrm{HV}_\mathrm{CO_2} + \mathrm{FED}_\mathrm{O_2}
 \ee
@@ -3546,6 +3523,10 @@ depends upon the immediate concentrations of irritants. The overall irritant con
 where the numerators are the instantaneous concentrations of each irritant, and the denominators are the concentrations of respective irritants
 expected to cause incapacitation in half the population. The incapacitating concentrations~\cite{SFPE:Purser} are given in the table above.
 
+\subsection{FED and FIC of gas mixtures (\texorpdfstring{\textct{FED\_FIC}}{FED\_FIC}) }
+\label{FED_FIC}
+\label{FED_FIC_SMIX}
+
 The FED and FIC values were computed from specified constant gas concentrations for four cases using an external script.
 The gas concentrations are listed in the table below. The concentrations are in ppm.
 \begin{center}
@@ -3605,6 +3586,19 @@ Figs.~\ref{FED_FIC_plot} and \ref{FED_FIC_SMIX_plot}.
 \label{FED_FIC_SMIX_plot}
 \end{figure}
 
+\subsection{FED from post-combustion yield of CO and HCN (\texorpdfstring{\textct{FED\_CO\_HCN}}{FED\_CO\_HCN}) }
+\label{FED_CO_HCN}
+The calculation of FED resulting from post-combustion yields of CO$_2$, CO and HCN, and the corresponding oxygen reduction is tested by specifying a combustion reaction of Polyisocyanurate (PIR) foam with 1 \% CO yield and 0.5 \% yield of HCN. The computational volume is intialized with 15 vol-\% of combustion products. The species concentrations were measured by volume fraction devices, and the expected value of FED index was calculated using an external Matlab script. The results are shown in~\ref{fig:FED_CO_HCN}.
+
+\begin{figure}[ht]
+\centering
+\begin{tabular}{c}
+\includegraphics[height=2.2in]{SCRIPT_FIGURES/FED_CO_HCN}
+\end{tabular}
+\caption[The FED value in \textct{FED\_CO\_HCN} case]{Comparison of predicted and expected FED resulting from the post-combustion yields of CO and HCN.}
+\label{fig:FED_CO_HCN}
+\end{figure}
+
 
 \section{Smoke Detector Model (\texorpdfstring{\textct{smoke\_detector}}{smoke\_detector}) }
 \label{smoke_detector}
@@ -3647,7 +3641,7 @@ Fig.~\ref{fig:smoke_detector} shows a comparison of the analytical and simulated
 \subsection{Gravitational Settling and Deposition of Aerosols\\(\texorpdfstring{\textct{aerosol\_gravitational\_deposition}}{aerosol\_gravitational\_deposition})}
 	\label{aerosol_gravitational_deposition}
 
-This verification test consists of two test cases. The second case, {\ct aerosol\_gravitational\_deposition\_2}, reverses the z-component of gravity. The case consists of a box 10~cm on side with adiabatic, free-slip side walls. The box is filled with two gas species each having a molecular weight of 28.8~g/mol, a viscosity of 0.00002~\si{kg/(m.s}, a thermal conductivity of 0.025~\si{W/(m.K}, and specific heat of 1~\si{kJ/(kg.K}, and zero diffusivity. One of the gas species is defined as an aerosol with a diameter of 100~$\mu$m, a solid phase density of 2000~kg/m$^3$, and a solid phase conductivity of 1~\si{W/(m.K}. The initial mass fraction of the aerosol is 0.00001. {\ct STRATIFICATION}, {\ct NOISE}, and all aerosol behaviors except for {\ct GRAVITATIONAL\_SETTLING} and {\ct GRAVITATIONAL\_DEPOSITION} are turned off. Since the box has a constant density over its height, a uniform settling rate over time is expected.
+This verification test consists of two test cases. The second case, {\ct aerosol\_gravitational\_deposition\_2}, reverses the z-component of gravity. The case consists of a box 10~cm on side with adiabatic, free-slip side walls. The box is filled with two gas species each having a molecular weight of 28.8~g/mol, a viscosity of 0.00002~\si{kg/(m.s}, a thermal conductivity of 0.025~\si{W/(m.K}, and specific heat of 1~\si{kJ/(kg.K}, and zero diffusivity. One of the gas species is defined as an aerosol with a diameter of 10~$\mu$m, a solid phase density of 2000~kg/m$^3$, and a solid phase conductivity of 1~\si{W/(m.K}. The initial mass fraction of the aerosol is 0.00001. {\ct STRATIFICATION}, {\ct NOISE}, and all aerosol behaviors except for {\ct GRAVITATIONAL\_SETTLING} and {\ct GRAVITATIONAL\_DEPOSITION} are turned off. Since the box has a constant density over its height, a uniform settling rate over time is expected.
 
 \begin{figure}[ht]
 	\centering
@@ -3664,7 +3658,7 @@ This verification test consists of two test cases. The second case, {\ct aerosol
 \subsection{Thermophoretic Settling and Deposition of Aerosols\\(\texorpdfstring{\textct{aerosol\_thermophoretic\_deposition}}{aerosol\_thermophoretic\_deposition})}
 	\label{aerosol_thermophoretic_deposition}
 
-This verification test consists of two test cases. The second case, {\ct aerosol\_thermophoretic\_deposition\_2}, reverses the temperature gradient. The case consists of a box 10~cm on side with adiabatic, free-slip side walls and a 100 K temperature gradient over the height of the box. The box is filled with two gas species each having a molecular weight of 28.8~g/mol, a viscosity of 0.00002~\si{kg/(m.s}, a thermal conductivity of 0.025~\si{W/(m.K}, and specific heat of 1~\si{kJ/(kg.K}, and zero diffusivity. One of the gas species is defined as an aerosol with a diameter of 1~$\mu$m, a solid phase density of 2000~kg/m$^3$, and a solid phase conductivity of 1~\si{W/(m.K}. The initial mass fraction of the aerosol is 0.00001. The gas temperature is initialized to its steady-state temperature gradient. {\ct STRATIFICATION}, {\ct NOISE}, and all aerosol behaviors except for {\ct THERMOPHORETIC\_SETTLING} and {\ct THERMOPHORETIC\_DEPOSITION} are turned off. Thermophoretic settling rates are weakly dependent on the gas density. Since there is a temperature gradient, the settlings rates are not uniform over the height of the box. Unlike the gravitational settling case, this means over long enough time periods the overall settling rate is not linear in time; however, for a short time period a near linear settling rate is expected and can be determined analytically
+This verification test consists of two test cases. The second case, {\ct aerosol\_thermophoretic\_deposition\_2}, reverses the temperature gradient. The case consists of a box 1~cm on side with adiabatic, free-slip side walls and a 100 K temperature gradient over the height of the box. The box is filled with two gas species each having a molecular weight of 28.8~g/mol, a viscosity of 0.00002~\si{kg/(m.s}, a thermal conductivity of 0.025~\si{W/(m.K}, and specific heat of 1~\si{kJ/(kg.K}, and zero diffusivity. One of the gas species is defined as an aerosol with a diameter of 1~$\mu$m, a solid phase density of 2000~kg/m$^3$, and a solid phase conductivity of 1~\si{W/(m.K}. The initial mass fraction of the aerosol is 0.00001. The gas temperature is initialized to its steady-state temperature gradient. {\ct STRATIFICATION}, {\ct NOISE}, and all aerosol behaviors except for {\ct THERMOPHORETIC\_SETTLING} and {\ct THERMOPHORETIC\_DEPOSITION} are turned off. Thermophoretic settling rates are weakly dependent on the gas density. Since there is a temperature gradient, the settlings rates are not uniform over the height of the box. Unlike the gravitational settling case, this means over long enough time periods the overall settling rate is not linear in time; however, for a short time period a near linear settling rate is expected and can be determined analytically
 
 \begin{figure}[ht]
 	\centering
@@ -4007,6 +4001,23 @@ In this example, a unit cube made of 0.5~cm thick steel has several of its sides
 \end{tabular*}
 \caption[The \textct{back\_wall\_test} test case]{(Left) The heat flux into and out of a steel plate. (Right) The external temperature of a steel box whose sides are either zero or one cell thick.}
 \label{back_wall_test_fig}
+\end{figure}
+
+
+\section{Heat Conduction through Immersed Boundaries (\texorpdfstring{\textct{back\_wall\_test\_2}}{back\_wall\_test\_2})}
+\label{back_wall_test_2}
+
+A 0.8~m by 0.8~m plate with surface temperature 1000~$^\circ$C and emissivity of 1 exposes a parallel plate separated by 0.15~m. The exposed plate is 1~cm thick, with a conductivity of 25~W/(m$\cdot$K), density 1000~kg/m$^3$, specific heat 0.1~kJ/(kg$\cdot$K), emissivity 1, and a convective heat transfer coefficient of 0. Three different configurations are considered: (1) the plates are all defined as traditional FDS {\ct OBST}ructions, (2) the plates are defined as immersed boundary ({\ct GEOM}) obstructions, and (3) the same plates as in (2) are rotated 45$^\circ$. Figure~\ref{back_wall_test_2_fig} displays the front and back surface temperatures for all three cases, compared to the exact solution where the analytically determined heat flux, Eq.~(\ref{plate_view_factor_eq}), is imposed directly on the front plate surface. The error in all three cases is due mainly to the error in the radiation transport calculation on grids with 2.5~cm cells.
+
+\begin{figure}[ht]
+\noindent
+\begin{tabular*}{\textwidth}{l@{\extracolsep{\fill}}r}
+\includegraphics[height=2.2in]{SCRIPT_FIGURES/back_wall_test_2_temp_obst} &
+\includegraphics[height=2.2in]{SCRIPT_FIGURES/back_wall_test_2_temp_geom} \\
+\multicolumn{2}{c}{\includegraphics[height=2.2in]{SCRIPT_FIGURES/back_wall_test_2_temp_geom_rotated}}
+\end{tabular*}
+\caption[The \textct{back\_wall\_test\_2} test cases]{Front and back surface temperatures of a plate defined using the {\ct OBST} namelist parameters (top, left); {\ct GEOM} namelist parameters (top, right); {\ct GEOM} parameters rotated 45$^\circ$.}
+\label{back_wall_test_2_fig}
 \end{figure}
 
 
@@ -4422,9 +4433,52 @@ Figure~\ref{surf_mass_two_species} shows the results of three test cases involvi
 \label{surf_mass_two_species}
 \end{figure}
 
+\clearpage
 
+\subsection{Rate of Solid Particle Decomposition (\texorpdfstring{\textct{solid\_particle\_decomposition}}{solid\_particle\_decomposition})}
+\label{sec:solid_particle_decomposition}
+\label{solid_particle_decomposition}
 
+\textbf{Paul Papas and Changmin Cao, Raytheon Technologies}\\
 
+In this set of cases we present a simple analytical solution for the solid phase decomposition of a spherical particle with a constant rate of reaction under isothermal conditions.  Let $m(t)$ denote the mass of a spherical particle with radius $r(t)$, changing with time, $t$.  The initial mass is $m_0 = m(t=0)$.  The extent of reaction is defined as
+\begin{equation}
+\alpha \equiv \frac{m_0-m}{m_0}
+\end{equation}
+
+The density of the material, $\rho$, is a constant.  The volume is denoted $V(t)$.  The rate of change of $\alpha$ for a first-order reaction is given by \cite{Khawam:2006}
+\begin{equation}
+\frac{\d \alpha}{\d t} = k \, (1-\alpha)
+\end{equation}
+where the rate constant of the reaction is
+\begin{equation}
+k = A e^{-E_a/(RT)}
+\end{equation}
+Here, $A$ is the Arrhenius parameter (1/s) and $E_a$ is the activation energy (J/mol); $R$ is the gas constant (8.3145 J/mol/K) and $T$ is temperature in K.
+
+Integrating with constant density gives
+\begin{equation}
+\int \frac{\d \alpha}{1-\alpha} = k \int \d t \quad \Rightarrow \quad \left[\ln(1-\alpha)\right]_{\alpha_0}^{\alpha} = -k t
+\end{equation}
+
+\begin{equation}
+\frac{1-\alpha}{1-\alpha_0} = e^{-kt} \quad ; \quad \alpha_0=0 \quad ; \quad \alpha = 1-\frac{m}{m_0}
+\end{equation}
+
+\begin{equation}
+\frac{m}{m_0} = e^{-k t} \quad \Rightarrow \quad \frac{\rho V}{\rho_0 V_0} = e^{-k t} \quad \Rightarrow \quad r^3 = r_0^3 \, e^{-k t}
+\end{equation}
+
+\subsection*{Example}
+
+In Fig.~\ref{fig:solid_particle_decomposition} below, we take $A = 3.4e11$ 1/s, $E_a = 103000$ J/mol, $r_0 = 2.5$ $\mu$m, and compare FDS with the analytical solution for $T=[420, 450, 500]$ K.
+
+\begin{figure}[!h]
+\centering
+\includegraphics[height=2.2in]{SCRIPT_FIGURES/solid_particle_decomposition}
+\caption[The \textct{solid\_particle\_decomposition} test cases]{Comparison of analytical and predicted particle diameter for a first-order solid phase reaction under isothermal conditions.}
+\label{fig:solid_particle_decomposition}
+\end{figure}
 
 \section{Burning Rate of a Small Object (\texorpdfstring{\textct{cell\_burn\_away}}{cell\_burn\_away})}
 \label{cell_burn_away}
@@ -4872,6 +4926,20 @@ This case compares mass loss rates and material thickness for pyrolysis of black
 	\label{fig:pyro3d_vs_pyro1d_wood_moist}
 \end{figure}
 
+\subsection{Restart Function (\texorpdfstring{\textct{pyro3d\_restart}}{pyro3d\_restart})}
+	\label{pyro3d_restart}
+
+	\textbf{Morteza Gholami Haghighi Fard, Aalto University}\\
+
+	\noindent This case analyses the numerical reliability of the restart function on the PYRO3D routine. A cube of 0.002 m $\times$ 0.002 m $\times$ 0.010 m black PMMA sample pyrolyzes with burn away capability of the 3D solver. The material is heated with 50 \si{kW/m^2} external flux from the top, while other sides of the material are thermally insulated. The grid resolution is 0.001 m and combustion is ignored in the simulations. A test case is forcefully stopped at 350 s of the simulation time and restarted until all the material is burned away at about 600 s. Another simulation is performed completely without any interruption until the entire PMMA is consumed. The verification target is identical time-resolved mass loss rate curves for both simulations. It is confirmed by a point by point comparison of the results, shown in Fig.~\ref{fig:pyro3d_restart}.
+
+	\begin{figure}[!ht]
+		\centering
+		\includegraphics[height=2.2in]{SCRIPT_FIGURES/pyro3d_restart}
+		\caption[PYRO3D restart (the {\ct pyro3d\_restart} case)]{Comparison of mass loss rate for a restarted and an uninterrupted 3D pyrolysis simulations with burn away. Verification target is equal values of all points along each curve.}
+		\label{fig:pyro3d_restart}
+	\end{figure}
+
 \subsection{Mass Transport (\texorpdfstring{\textct{pyro3d\_transport}}{pyro3d\_transport})}
 \label{pyro3d_transport}
 
@@ -5077,7 +5145,7 @@ where $\rho_{\rm a}$ is the air density, $C_{\rm d}=1$ is the drag coefficient, 
     x = - \frac{\text{ln}\left[\text{cosh}\left(\sqrt{g K} t \right)\right]}{K} \quad ; \quad
     K \equiv \frac{3 \rho_{\rm a} C_{\rm d}}{4 \rho_{\rm d} D}
 \ee
-The $L_\infty$ (maximum) error of the FDS computed terminal velocity and position are computed and plotted for each time step. As shown in Fig.~\ref{fig_terminal_velocity_convergence}, FDS exhibits second-order convergence for both the velocity and position.
+The $L_\infty$ (maximum) error of the FDS computed terminal velocity and position are computed and plotted for each time step. As shown in Fig.~\ref{fig_terminal_velocity_convergence}, FDS exhibits first-order convergence for the particle position and the terminal velocity error is near machine precision.
 
 \begin{figure}[h]
 \noindent
@@ -5089,39 +5157,7 @@ The $L_\infty$ (maximum) error of the FDS computed terminal velocity and positio
 \label{fig_terminal_velocity_convergence}
 \end{figure}
 
-%
-%\section{Accuracy of Fluid-Particle Momentum Transfer}
-%In Appendix G of the Technical Reference Guide the numerical scheme FDS uses to compute these trajectories is detailed. The equation for particle velocities is
-%\begin{equation}
-%   \mathbf{u}_p^{n+1} = \frac{\mathbf{u}_p^n}{1 + \beta_p \Delta t} + \frac{(\mathbf{u}_p^n + \alpha_p \mathbf{U}_p^n)\beta_p \Delta t}{(1 + \beta_p \Delta t)(1 + \alpha_p)} + \mathbf{g} \Delta t - \frac{\alpha_p \beta_p (\Delta t)^2}{2 (1 + \alpha_p)} \left[\mathbf{u}_r^n \left(\frac{\mathbf{u}_r^n \cdot \mathbf{g}}{|\mathbf{u}_r^n|^2}\right) + \mathbf{g}\right] \,.
-%\end{equation}
-%And the equation for particle positions is
-%\begin{equation}
-%   \mathbf{x}_p^{n+1} = \mathbf{x}_p^n + \left(\frac{\mathbf{u}_p^n + \alpha_p \mathbf{U}_p^n}{1 + \alpha_p}\right) \Delta t + \frac{\alpha_p (\mathbf{u}_p^n - \mathbf{U}_p^n)}{\beta_p (1 + \alpha_p)} \text{ln}(\beta_p \Delta t + 1) + \frac{\mathbf{g} (\Delta t)^2}{2} - \frac{\alpha_p \beta_p (\Delta t)^3}{6 (1 + \alpha_p)} \left[\mathbf{u}_p^n \left(\frac{\mathbf{u}_p^n \cdot \mathbf{g}}{|\mathbf{u}_p^n|^2}\right) + \mathbf{g}\right] \,.
-%\end{equation}
-%The particle velocities are second-order accurate in time. In other words, they are accurate to an order-of-magnitude of $\Delta t^2$. The error committed each time step as shown in Appendix G is
-%\begin{equation}
-%   \epsilon = \mathcal{O}(\Delta t^3) \,.
-%\end{equation}
-%This error is accumulated over many time steps. The allows us to define the total error $E \equiv n \epsilon$ where $n = T/\Delta T$ is the number of time steps and $T$ is the final time iterated out to. The total error can be found to be
-%\begin{equation}
-%   E = n \epsilon = \frac{T}{\Delta t} \mathcal{O}(\Delta t^3) = \mathcal{O}(\Delta t^2) \,.
-%\end{equation}
-%The particle velocities should be second-order accurate, as has been shown in FDS.
-%
-%
-%The accuracy of the particle positions, $\mathbf{x}$ is less obvious and finding their accuracy requires knowledge of the accuracy of $\mathbf{u}$. The natural log term of the position equation reduces the order of accuracy. Note that
-%\begin{equation}
-%   \frac{\alpha_p (\mathbf{u}_p^n - \mathbf{U}_p^n)}{\beta_p (1 + \alpha_p)} \text{ln}(\beta_p \Delta t + 1) = \frac{\alpha_p (\mathbf{u}_p^n - \mathbf{U}_p^n)}{1 + \alpha_p} \left(\Delta t - \frac{\beta_p \Delta t^2}{2} + \cdots \right) \quad \text{ for } \beta_p t < 1 \,.
-%\end{equation}
-%Also note that $\mathbf{u}_p^n = \mathbf{u}_{p,\text{exact}}^n + \mathcal{O}(\Delta t^2)$ in general. This error propagates through the natural log term. If only the relevant parts of the term are extracted we can see that
-%\begin{equation}
-%   \frac{\mathbf{u}_p^n}{\beta_p} \text{ln}(\beta_p \Delta t + 1) = (\mathbf{u}_{p,\text{exact}}^n + \mathcal{O}(\Delta t^2)) \left(\Delta t - \frac{\beta_p \Delta t^2}{2} + \cdots \right) = \frac{\mathbf{u}_{p,\text{exact}}^n \text{ln}(\beta_p \Delta t + 1)}{\beta_p} + \mathcal{O}(\Delta t^3) \,.
-%\end{equation}
-%This third-order error per time step becomes an accumulated second-order error, and consequently the position scheme is only second-order accurate as has been shown numerically.
-%
-%
-%Due to this error, the $\Delta t^3$ term of the position equation is dropped because it offers no improvements in accuracy but requires more computation.
+
 
 
 
@@ -5153,7 +5189,8 @@ Initial height                    & $h$                  & 8 m \\
 \hline
 \end{tabular}
 \end{center}
-Figure~\ref{flat_fire_plots} compares the first and second order accurate FDS solutions to the ``flat fire'' solution given above. The ``flat fire'' solution should have a slightly faster vertical velocity component, $w_{\rm p}$, at extended times because the speed of the particle is approximated with $u_{\rm p}$, which is lower than the true speed. This ensures the drag force is lower than it should be, and consequently $|w_{\rm p}|$ is larger in the ``flat fire'' solution. In the lower left plot in Fig.~\ref{flat_fire_plots} $|w_{\rm p}|$ computed by FDS using the second order accurate scheme is slightly less than the ``flat fire'' solution.
+Figure~\ref{flat_fire_plots} compares the computed solution to the ``flat fire'' solution given above.
+
 \begin{figure}[!ht]
 \begin{tabular*}{\textwidth}{l@{\extracolsep{\fill}}r}
 \includegraphics[height=2.2in]{SCRIPT_FIGURES/flat_fire_trajectory} &
@@ -5397,6 +5434,18 @@ In the test case called {\ct Sprinklers\_and\_Sprays/geom\_sprk\_mass.fds}, two 
 \caption[The {\ct geom\_sprk\_mass} test case]{Mass of water pooled on two solid obstructions.}
 \label{geom_sprk_mass_fig}
 \end{figure}
+
+\subsection{Obstructions of Different Orientations (\texorpdfstring{{\textct{geom\_particle\_cascade\_2}}}{geom\_particle\_cascade\_2}) }
+\label{geom_particle_cascade_2}
+
+In the test case called {\ct Complex\_Geometry/geom\_particle\_cascade\_2.fds}, four identical sprinklers pour water on four obstructions, one of which is created using the traditional {\ct OBST} input parameters, the other three are created using the immersed boundary {\ct GEOM} parameters. The objective is simply to ensure that the droplets drip off the obstructions appropriately. The sprinklers operate for 10~s, each discharging 10~L of water. Figure~\ref{geom_particle_cascade_2_fig} displays the accumulated mass of water on the floor as a function of time, demonstrating equivalent behavior by different types of solid obstructions.
+\begin{figure}[h!]
+\centering
+\includegraphics[height=2.2in]{SCRIPT_FIGURES/geom_particle_cascade_2}
+\caption[The {\ct geom\_particle\_cascade\_2} test case]{Mass of water flowing over four obstructions.}
+\label{geom_particle_cascade_2_fig}
+\end{figure}
+
 
 \subsection{Adiabatic Surface Temperature (\texorpdfstring{{\textct{adiabatic\_surf\_temp\_spray}}}{adiabatic\_surf\_temp\_spray}) }
 \label{AST_spray}
@@ -6174,18 +6223,10 @@ On this domain, cut-cells with same shape and size of regular cells are defined 
 
 \title{Temporal order of accuracy}
 
-Six cases are defined for this test:
-%
-\begin{enumerate}
- \item[a]  Three correspond to default FDS DNS flux limiter and default explicit Strong Stability Preserving Runge Kutta (SSPRK2) time integration in cells not covered by cut-cells, plus Godunov flux limiter and explicit SSPRK2 time integration in cut-cell region, for CFL numbers $0.25$, $0.125$, $0.0625$. These cases are defined in {\ct /Complex\_Geometry/saad\_CC\_explicit\_*.fds}.
+Three cases are defined corresponding to default FDS DNS flux limiter and default explicit Strong Stability Preserving Runge Kutta (SSPRK2) time integration in cells not covered by cut-cells, plus Godunov flux limiter and explicit SSPRK2 time integration in cut-cell region, for CFL numbers $0.25$, $0.125$, $0.0625$. These cases are defined in {\ct /Complex\_Geometry/saad\_CC\_explicit\_*.fds}.
 
-  \item[b] The other three cases correspond to default flux limiter and time integration in cells not covered by cut-cells, plus Godunov flux limiter and implicit time integration in cut-cell region for the same CFL numbers. The implicit integration on the cut-cell region is done applying an Backward Euler step in the predictor, and Trapezoidal Rule on the corrector step. The imposition of boundary conditions for the implicit region in domain and explicit-implicit (EXIM) boundaries follows the technical notes in section \texttt{sec:exim\_scalar\_transport} of the Technical Reference Guide. These cases are defined in {\ct /Complex\_Geometry/saad\_CC\_implicit\_*.fds}.
-
-\end{enumerate}
-%
-
-Same procedure as explained in section~\ref{sec:saad_temporal_error} is used to define the temporal order of accuracy $p$. As noted there, this procedure filters out the spatial error from the computed temporal convergence. Initial and final fields for temperature and mixture fraction for the smallest integration time step are shown in the top figures of Fig.~\ref{fig:saad_cc_temporal_order}. Fields advect to the right with unitary velocity. The two bottom figures show the order $p$ computed point wise in the $x$ direction for explicit and implicit time integration on the cut-cell region. Deviations from $p \simeq 2$ are dependent on the formula used to compute $p$, as explained in section~\ref{sec:saad_temporal_error}.
-The $l_2$ norm of $p$ computed pointwise for explicit integration in cut-cells is \input{../FDS_Verification_Guide/SCRIPT_FIGURES/saad_CC_explicit_l2_norm}\!, and for implicit time integration of scalars on these is  \input{../FDS_Verification_Guide/SCRIPT_FIGURES/saad_CC_implicit_l2_norm}\!.
+Same procedure as explained in section~\ref{sec:saad_temporal_error} is used to define the temporal order of accuracy $p$. As noted there, this procedure filters out the spatial error from the computed temporal convergence. Initial and final fields for temperature and mixture fraction for the smallest integration time step are shown in the top figures of Fig.~\ref{fig:saad_cc_temporal_order}. Fields advect to the right with unitary velocity. The bottom figure shows the order $p$ computed point wise in the $x$ direction for explicit time integration on the cut-cell region. Deviations from $p \simeq 2$ are dependent on the formula used to compute $p$, as explained in section~\ref{sec:saad_temporal_error}.
+The $l_2$ norm of $p$ computed pointwise for explicit integration in cut-cells is \input{../FDS_Verification_Guide/SCRIPT_FIGURES/saad_CC_explicit_l2_norm}\!.
 
 % Figure Saad_CC:
 \begin{figure}[ht]
@@ -6193,8 +6234,7 @@ The $l_2$ norm of $p$ computed pointwise for explicit integration in cut-cells i
 \includegraphics[width=.49\textwidth]{../FDS_Verification_Guide/SCRIPT_FIGURES/saad_CC_explicit_Z.pdf}
 \includegraphics[width=.49\textwidth]{../FDS_Verification_Guide/SCRIPT_FIGURES/saad_CC_explicit_rho.pdf}
 \includegraphics[width=.49\textwidth]{../FDS_Verification_Guide/SCRIPT_FIGURES/saad_CC_explicit_temporal_order_rho.pdf}
-\includegraphics[width=.49\textwidth]{../FDS_Verification_Guide/SCRIPT_FIGURES/saad_CC_implicit_temporal_order_rho.pdf}
-\caption[The {\ct saad CC} temporal order test case]{Temporal order for a variable-density projection on domain including cut-cell region.  (Upper-left) Initial and final field for mixture fraction, explicit time integration on cut-cells.  (Upper-right) Initial and final field for density, explicit time integration on cut-cells.  (Lower-left) $p$ computed pointwise for density at final time, explicit integration on cut-cells. (Lower-right) $p$ computed pointwise for density at final time, implicit time integration on cut-cells.  Fluctuations are due to degenerate points in the formula for $p$.}\label{fig:saad_cc_temporal_order}
+\caption[The {\ct saad CC} temporal order test case]{Temporal order for a variable-density projection on domain including cut-cell region.  (Upper-left) Initial and final field for mixture fraction, explicit time integration on cut-cells.  (Upper-right) Initial and final field for density, explicit time integration on cut-cells.  (Bottom) $p$ computed pointwise for density at final time, explicit integration on cut-cells. Fluctuations are due to degenerate points in the formula for $p$.}\label{fig:saad_cc_temporal_order}
 \end{figure}
 
 
@@ -6203,7 +6243,7 @@ The $l_2$ norm of $p$ computed pointwise for explicit integration in cut-cells i
 \label{sec:shunn_cc_mms}
 
 
-We set to test the manufactured solution test case~\ref{sec:shunn_mms} for scalar transport, including an internal region of the two dimensional domain where cut-cells with same shape and size as regular Cartesian cells are artificially defined. This problem allows us to check the overall accuracy (spatial+temporal) of the cut-cell implementation for scalar transport for both explicit and implicit integration on the cut-cell region.
+We set to test the manufactured solution test case~\ref{sec:shunn_mms} for scalar transport, including an internal region of the two dimensional domain where cut-cells with same shape and size as regular Cartesian cells are artificially defined. This problem allows us to check the overall accuracy (spatial+temporal) of the cut-cell implementation for scalar transport on the cut-cell region.
 The parameters of the test follow the ones defined by Shunn et al.~\cite{Shunn:2012} and described in section~\ref{sec:shunn_mms}.
 
 The treatment of sources for scalar transport and momentum equations due to the manufactured solution is essentially the same as defined in section~\ref{sec:shunn_mms}. Therefore, source terms from manufactured solution are treated following the base SSPRK2 integration method defined in FDS.
@@ -6214,7 +6254,7 @@ The domain is defined on a square of length ($L=2$ m), with periodicity prescrib
 % Figure:
 
 
-Simulations were performed for $N = \{32, 64, 128, 256, 384\}$, where $N$ is the number of cells in each direction, using an adaptive time step satisfying a CFL number of 0.25. The scalar transport equations for both species defined on section~\ref{sec:shunn_mms}, are solved using the GODUNOV flux limiter and centered interpolation. Figure~\ref{fig:shunn_cc_accuracy_order}, presents the $L_2$ error norm defined on the whole domain (regular+cut-cells) at time $t = 0.9$ as a function of grid spacing, $\Delta x = L/N$. Both explicit and implicit time integration in the cut-cell region produce second-order accurate solutions for density, mixture fraction, and velocity, when centered interpolation is used to define the advective mass flux. As expected, these variables exhibit asymptotic first order accuracy when the GODUNOV flux limiter is used. Note that central differences are used on the diffusive terms of these equations, rendering a second order accurate approximation of diffusion on these regular shaped cells. The pressure $H$ is, in same fashion as seen on section~\ref{sec:shunn_mms}, first order accurate. This is consistent with the projection scheme used for time integration of velocities used by FDS.
+Simulations were performed for $N = \{32, 64, 128, 256, 384\}$, where $N$ is the number of cells in each direction, using an adaptive time step satisfying a CFL number of 0.25. The scalar transport equations for both species defined on section~\ref{sec:shunn_mms}, are solved using the GODUNOV flux limiter and centered interpolation. Figure~\ref{fig:shunn_cc_accuracy_order}, presents the $L_2$ error norm defined on the whole domain (regular+cut-cells) at time $t = 0.9$ as a function of grid spacing, $\Delta x = L/N$. Time integration in the cut-cell region produces second-order accurate solutions for density, mixture fraction, and velocity, when centered interpolation is used to define the advective mass flux. As expected, these variables exhibit asymptotic first order accuracy when the GODUNOV flux limiter is used. Note that central differences are used on the diffusive terms of these equations, rendering a second order accurate approximation of diffusion on these regular shaped cells. The pressure $H$ is, in same fashion as seen on section~\ref{sec:shunn_mms}, first order accurate. This is consistent with the projection scheme used for time integration of velocities used by FDS.
 
 
 % Figure Shunn_CC:
@@ -6222,9 +6262,7 @@ Simulations were performed for $N = \{32, 64, 128, 256, 384\}$, where $N$ is the
 \centering
 \includegraphics[width=.49\textwidth]{../FDS_Verification_Guide/SCRIPT_FIGURES/shunn_cc_exp_cen_mms_convergence.pdf}
 \includegraphics[width=.49\textwidth]{../FDS_Verification_Guide/SCRIPT_FIGURES/shunn_cc_exp_gdv_mms_convergence.pdf}
-\includegraphics[width=.49\textwidth]{../FDS_Verification_Guide/SCRIPT_FIGURES/shunn_cc_imp_cen_mms_convergence.pdf}
-\includegraphics[width=.49\textwidth]{../FDS_Verification_Guide/SCRIPT_FIGURES/shunn_cc_imp_gdv_mms_convergence.pdf}
-\caption[The {\ct Shunn CC} accuracy order test case]{Overall accuracy for manufactured solution variable-density projection on domain including cut-cell region. The $L_2$ error defined on the whole domain at time $t = 0.9$ s is plotted as a function of grid spacing for $N=\{32,64,128,256,384\}$ points in each direction. Two flux limiting options for scalar advection are used: centered interpolation and Godunov.  (Upper-left) Convergence for explicit scalar time integration and centered interpolation for advection.  (Upper-right) Convergence for explicit scalar time integration and Godunov flux limiter.  (Lower-left) Convergence for implicit scalar time integration (Backward Euler step in predictor and Trapezoidal rule in corrector step), and  centered interpolation for advection. (Lower-right) Convergence for implicit scalar time integration and Godunov flux limiter.  }\label{fig:shunn_cc_accuracy_order}
+\caption[The {\ct Shunn CC} accuracy order test case]{Overall accuracy for manufactured solution variable-density projection on domain including cut-cell region. The $L_2$ error defined on the whole domain at time $t = 0.9$ s is plotted as a function of grid spacing for $N=\{32,64,128,256,384\}$ points in each direction. Two flux limiting options for scalar advection are used: centered interpolation and Godunov.  (Left) Convergence for explicit scalar time integration and centered interpolation for advection.  (Right) Convergence for explicit scalar time integration and Godunov flux limiter. }\label{fig:shunn_cc_accuracy_order}
 \end{figure}
 
 
@@ -6325,36 +6363,35 @@ That is, if $\alpha=\arctan(1)$,  the periodicity length increases to $L_x=L_y=\
 % Figures showing each case with the geom and velocity field to show rotation:
 
 
-% Figures rotcube_cc:
+% Figures rotcube_cc 0deg:
 \begin{figure}[ht]
 \centering
-\includegraphics[trim = 5mm 2mm 7mm 2mm, clip, width=.365\textwidth]{../FDS_Verification_Guide/SCRIPT_FIGURES/rotated_cube_0deg_exp_mms_connvergence.pdf}
-\includegraphics[trim = 30mm 2mm 7mm 2mm, clip, width=.305\textwidth]{../FDS_Verification_Guide/SCRIPT_FIGURES/rotated_cube_0deg_imp_mms_connvergence.pdf}
-\includegraphics[trim = 30mm 2mm 7mm 2mm, clip, width=.305\textwidth]{../FDS_Verification_Guide/SCRIPT_FIGURES/rotated_cube_0deg_obs_mms_connvergence.pdf}
-\caption[The {\ct Rotated Cube CC} accuracy order test case]{Zero degree rotation. The $L_2$ error defined on the whole domain at time $t = 0.95$ s is plotted as a function of grid spacing for $N=\{32,64,128,256,384\}$ points in each direction.}\label{fig:rotcube_cc_0deg_accuracy_order}
+\includegraphics[trim = 5mm 2mm 7mm 2mm, clip, width=.365\textwidth]{../FDS_Verification_Guide/SCRIPT_FIGURES/rotated_cube_0deg_ibm_mms_convergence.pdf}
+\includegraphics[trim = 30mm 2mm 7mm 2mm, clip, width=.305\textwidth]{../FDS_Verification_Guide/SCRIPT_FIGURES/rotated_cube_0deg_stm_mms_convergence.pdf}
+\includegraphics[trim = 30mm 2mm 7mm 2mm, clip, width=.305\textwidth]{../FDS_Verification_Guide/SCRIPT_FIGURES/rotated_cube_0deg_obs_mms_convergence.pdf}
+\caption[The {\ct Rotated Cube CC} accuracy order test case]{Zero degree rotation. The $L_2$ error defined on the whole domain at time $t = 0.95$ s is plotted as a function of grid spacing for $N=\{32,64,128,256,384\}$ points in each direction. (Left) Direct forcing immersed boundary method, (Middle) stress method, (Right) square defined by $\&$OBST.}\label{fig:rotcube_cc_0deg_accuracy_order}
 \end{figure}
-
-
-\begin{figure}[ht]
-\centering
-\includegraphics[width=.49\textwidth]{../FDS_Verification_Guide/SCRIPT_FIGURES/rotated_cube_27deg_exp_mms_connvergence.pdf}
-\includegraphics[width=.49\textwidth]{../FDS_Verification_Guide/SCRIPT_FIGURES/rotated_cube_27deg_imp_mms_connvergence.pdf}
-\caption[The {\ct Rotated Cube CC} accuracy order test case]{$\simeq27$ degree rotation. The $L_2$ error defined on the whole domain at time $t = 0.95$ s is plotted as a function of grid spacing for $N=\{32,64,128,256,384\}$ points in each direction.}\label{fig:rotcube_cc_27deg_accuracy_order}
-\end{figure}
-
-
-Although the different orientation angles correspond to different periodicity lengths and domain sizes all cases were run with $N=\{32,64,128,256,384\}$ points in each direction for accuracy testing. The different inclination angles and grids were run with explicit and implicit time integration for scalars in the cut-cell region. The cases with zero inclination were also run with the $\&$OBST functionality for comparison. Calculations were run at constant $CFL=0.1$ and errors were computed on the solution at the first time level after $t=0.95$. The cases input files are found on \texttt{/Complex\_Geometry/rotated\_cube\_*deg\_*\_*.fds}.
-
-Overall the error norm behaves as $\mathcal{O}(\Delta x)$ for the scalar transport equation in cases where the cube is inclined. This is expected as the diffusive flux differences used are of this spatial accuracy. Note that for the non inclined cases of figure~\ref{fig:rotcube_cc_0deg_accuracy_order} the scalar $Z$ presents better accuracy, simply because the two point centroid to centroid difference coincides with a central difference. Note that the Godunov flux limited interpolation does not have a detrimental effect in accuracy, simply because advective fluxes reduce to zero at the boundary.
-The $\mathcal{O}(\Delta x^2)$ accuracy in $Z$ is also seen for $\&$OBSTs in the right figure of~\ref{fig:rotcube_cc_0deg_accuracy_order}, which use central differences for diffusive fluxes.
-For the $\&$OBSTs where the momentum equations are solved on velocity points next to the surface, velocities behave as $\mathcal{O}(\Delta x^2)$, in accordance to the discretization schemes used (right figure~\ref{fig:rotcube_cc_0deg_accuracy_order}). The immersed boundary velocity reconstruction on cut-faces provides spatial accuracies between $\mathcal{O}(\Delta x)$ and $\mathcal{O}(\Delta x^2)$ in $L_2$ norm across the different inclination angles, which are inline with what is expected for immersed boundary methods of this type. Note that pressure spatial accuracy is $\mathcal{O}(\Delta x)$ across all tests, consistent with the fractional step projection method used by FDS.
 
 % Figures for accuracy 27deg:
 \begin{figure}[ht]
 \centering
-\includegraphics[width=.49\textwidth]{../FDS_Verification_Guide/SCRIPT_FIGURES/rotated_cube_45deg_exp_mms_connvergence.pdf}
-\includegraphics[width=.49\textwidth]{../FDS_Verification_Guide/SCRIPT_FIGURES/rotated_cube_45deg_imp_mms_connvergence.pdf}
-\caption[The {\ct Rotated Cube CC} accuracy order test case]{$45$ degree rotation. The $L_2$ error defined on the whole domain at time $t = 0.95$ s is plotted as a function of grid spacing for $N=\{32,64,128,256,384\}$ points in each direction.}\label{fig:rotcube_cc_45deg_accuracy_order}
+\includegraphics[width=.49\textwidth]{../FDS_Verification_Guide/SCRIPT_FIGURES/rotated_cube_27deg_ibm_mms_convergence.pdf}
+\includegraphics[width=.49\textwidth]{../FDS_Verification_Guide/SCRIPT_FIGURES/rotated_cube_27deg_stm_mms_convergence.pdf}
+\caption[The {\ct Rotated Cube CC} accuracy order test case]{$\simeq27$ degree rotation. The $L_2$ error defined on the whole domain at time $t = 0.95$ s is plotted as a function of grid spacing for $N=\{32,64,128,256,384\}$ points in each direction. (Left) Direct forcing immersed boundary method, (Right) stress method.}\label{fig:rotcube_cc_27deg_accuracy_order}
+\end{figure}
+
+Although the different orientation angles correspond to different periodicity lengths and domain sizes all cases were run with $N=\{32,64,128,256,384\}$ points in each direction for accuracy testing. The different inclination angles and grids were run with direct forcing IBM and stress method for shear stress imposition. The cases with zero inclination were also run with the $\&$OBST functionality for comparison. Calculations were run at constant $CFL=0.1$ and errors were computed on the solution at the first time level after $t=0.95$. The cases input files are found on \texttt{/Complex\_Geometry/rotated\_cube\_*deg\_*\_*.fds}.
+
+Overall the error norm behaves as $\mathcal{O}(\Delta x)$ for the scalar transport equation in cases where the cube is inclined. This is expected as the diffusive flux differences used are of this spatial accuracy. Note that for the non inclined cases of figure~\ref{fig:rotcube_cc_0deg_accuracy_order} the scalar $Z$ presents better accuracy, simply because the two point centroid to centroid difference coincides with a central difference. Note that the Godunov flux limited interpolation does not have a detrimental effect in accuracy, simply because advective fluxes reduce to zero at the boundary.
+The $\mathcal{O}(\Delta x^2)$ accuracy in $Z$ is also seen for $\&$OBSTs in the right figure of~\ref{fig:rotcube_cc_0deg_accuracy_order}, which use central differences for diffusive fluxes.
+For the $\&$OBSTs and grid aligned stress method where the momentum equations are solved on velocity points next to the surface, velocities behave as $\mathcal{O}(\Delta x^2)$, in accordance to the discretization schemes used (right figure~\ref{fig:rotcube_cc_0deg_accuracy_order}). The immersed boundary velocity reconstruction on cut-faces provides spatial accuracies between $\mathcal{O}(\Delta x)$ and $\mathcal{O}(\Delta x^2)$ in $L_2$ norm across the different inclination angles, which are inline with what is expected for immersed boundary methods of this type. For the stress method and inclined cases the spatial accuracy is $\mathcal{O}(\Delta x)$. Note that pressure spatial accuracy is $\mathcal{O}(\Delta x)$ across all tests, consistent with the fractional step projection method used by FDS.
+
+% Figures for accuracy 45deg:
+\begin{figure}[ht]
+\centering
+\includegraphics[width=.49\textwidth]{../FDS_Verification_Guide/SCRIPT_FIGURES/rotated_cube_45deg_ibm_mms_convergence.pdf}
+\includegraphics[width=.49\textwidth]{../FDS_Verification_Guide/SCRIPT_FIGURES/rotated_cube_45deg_stm_mms_convergence.pdf}
+\caption[The {\ct Rotated Cube CC} accuracy order test case]{$45$ degree rotation. The $L_2$ error defined on the whole domain at time $t = 0.95$ s is plotted as a function of grid spacing for $N=\{32,64,128,256,384\}$ points in each direction. (Left) Direct forcing immersed boundary method, (Right) stress method.}\label{fig:rotcube_cc_45deg_accuracy_order}
 \end{figure}
 
 
@@ -6441,6 +6478,17 @@ as shown in Fig.~\ref{sphere_leak_fig}.
 \includegraphics[width=3.2in]{../FDS_User_Guide/SCRIPT_FIGURES/sphere_leak.pdf}
 \caption[The {\ct sphere\_leak} test case]{Pressure rise in a leaking sphere.}
 \label{sphere_leak_fig}
+\end{figure}
+
+\subsection{Restart Function}
+\label{geom_restart}
+
+In this test, a GEOM cube is heated from below by a surface at a fixed temperature.  The internal temperature inside the geometry is monitored.  The full calculation runs for 1,200 s.  At 700 s, a RESTART is performed and compared with the base case.  The results are shown in Fig.~\ref{fig:geom_restart}.
+\begin{figure}[ht]
+\centering
+\includegraphics[width=3.2in]{../FDS_Verification_Guide/SCRIPT_FIGURES/geom_restart.pdf}
+\caption[The {\ct geom\_restart} test case]{Test of restart functionality for complex geometry.}
+\label{fig:geom_restart}
 \end{figure}
 
 

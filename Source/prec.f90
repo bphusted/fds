@@ -28,8 +28,8 @@ INTEGER, PARAMETER :: N_OUTPUT_QUANTITIES=550        !< Dimension of array that 
 
 REAL(EB), PARAMETER :: ALMOST_ONE=1._EB-EPSILON(1._EB)     !< Largest number that is < 1 in 8 byte accuracy
 REAL(EB), PARAMETER :: MICRON=1.E-6_EB                     !< A relatively small length (m)
-REAL(EB), PARAMETER :: TWO_EPSILON_EB=2._EB*EPSILON(1._EB) !< A very small number 8 byte accruracy
-REAL(FB), PARAMETER :: TWO_EPSILON_FB=2._EB*EPSILON(1._FB) !< A very small number 4 byte accruracy
+REAL(EB), PARAMETER :: TWO_EPSILON_EB=2._EB*EPSILON(1._EB) !< A very small number 8 byte accuracy
+REAL(FB), PARAMETER :: TWO_EPSILON_FB=2._EB*EPSILON(1._FB) !< A very small number 4 byte accuracy
 REAL(EB), PARAMETER :: TINY_EB=TINY(1._EB)                 !< The smallest resolvable 8 byte real number
 REAL(EB), PARAMETER :: HUGE_EB=HUGE(1._EB)                 !< The largest resolvable 8 btye real number
 
@@ -40,6 +40,6 @@ REAL(EB), PARAMETER :: ONTH=1._EB/3._EB,FOTH=4._EB/3._EB,TWTH=2._EB/3._EB,ONSI=1
 REAL(EB), PARAMETER :: PI=4._EB*ATAN(1.0_EB), SQRTPI=SQRT(PI), RPI=1._EB/PI, TWOPI=2._EB*PI, PIO2=PI/2._EB, &
                        RFPI=1._EB/(4._EB*PI), FOTHPI = FOTH*PI
 INTEGER, PARAMETER  :: INTEGER_ZERO=0,INTEGER_ONE=1,INTEGER_TWO=2,INTEGER_THREE=3
-REAL(EB), PARAMETER :: DEG2RAD=4.0_EB*ATAN(1.0_EB)/180.0_EB
+REAL(EB), PARAMETER :: DEG2RAD=PI/180.0_EB
 
 END MODULE PRECISION_PARAMETERS
