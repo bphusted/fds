@@ -1079,7 +1079,7 @@ where $\gamma_\lambda$ is the ``ratio between the mass of the fine structure and
 
 Second-order central differencing of the advection term in the scalar transport equation leads to dispersion errors (spurious wiggles) and these errors, if left untreated, can lead to scalar fields which are physically not realizable, e.g., negative densities.  To prevent this, FDS employs a boundedness correction to the scalar fields after the explicit transport step.  The correction, which we describe below, acts locally and effectively adds the minimum amount of diffusion necessary to prevent boundedness violations.  This correction does not make the scalar transport scheme total variation diminishing (TVD); it only serves to correct for boundedness. Similar schemes are employed by others (e.g., \cite{Herrmann:2005}).
 
-By default, FDS employs a TVD transport scheme (Superbee \cite{Roe:1986} for LES and CHARM \cite{Zhou:1995} for DNS). These TVD schemes are applied during the transport step and each can be shown to be TVD in one dimension under certain CFL constraints.  However, except for Godunov's scheme, the TVD proofs do not extend to three dimensions~\cite{Toro}.  Still, these schemes do a much better job than pure central differencing at mitigating dispersion error.  Note that even though TVD schemes are applied, FDS still checks for boundedness in case any small violations are not prevented by the flux limiter.
+By default, FDS employs a TVD transport scheme (Superbee \cite{Roe:1986} for VLES and CHARM \cite{Zhou:1995} for DNS and LES). These TVD schemes are applied during the transport step and each can be shown to be TVD in one dimension under certain CFL constraints.  However, except for Godunov's scheme, the TVD proofs do not extend to three dimensions~\cite{Toro}.  Still, these schemes do a much better job than pure central differencing at mitigating dispersion error.  Note that even though TVD schemes are applied, FDS still checks for boundedness in case any small violations are not prevented by the flux limiter.
 
 \subsubsection*{A simple case}
 
@@ -1769,5 +1769,43 @@ Finally, the updated cell water vapor mass fraction, $Y^{n+1}_{\rm \alpha, g}$, 
 \label{eqn_final_Yv}
 Y^{n+1}_{\rm \alpha, g}=Y^n_{\rm \alpha, g}+\frac{\Delta t^n}{\rho V} \frac{A_{\rm p,s} h_{\rm m} \rho_{\rm f}}{2} \left[\frac{2Y_{\alpha,\ell}^n + \left(\frac{\d Y_{\alpha,\ell}}{\d T}\right) (T_{\rm p}^{n+1} - T_{\rm p}^n)-2Y^n_{\rm \alpha, g}}{1+\frac{\Delta t^n A_g h_{\rm m}(1-Y_{\rm \alpha, g})}{2 \rho_{\rm g} V}}\right]
 \end{equation}
+
+
+\chapter{A Special Preconditioning Scheme for Solving the Poisson Equation in Tunnels}
+\label{tunnel_preconditioner}
+
+Consider the Poisson equation in a tunnel geometry where multiple meshes abut end to end in the $x$ direction. Start with the conventional equation for the pressure term, $\cH(\bx)$:
+\be
+   \nabla^2 \cH = -\dod{(\nabla\!\cdot \bu)}{t} - \nabla\!\cdot  \bF  \equiv f(\bx)
+\ee
+with boundary conditions
+\be
+   \dod{\cH}{n} = b_{n,m} \quad \hbox{or} \quad \cH = b_{n,m} \quad ; \quad n\in (x,y,z) \quad m \in(1,2)
+\ee
+at each of the six boundary faces of the rectangular domain. Now assume that $\cH$ can be decomposed:
+\be
+   \cH(\bx) = \bar{\cH}(x) + \cH'(\bx)
+\ee
+where $x$ is the lengthwise spatial coordinate of the tunnel. Solve the following equation for $\bar{\cH}$:
+\be
+   \frac{\d^2 \bar{\cH}}{\d x^2} = \bar{f}(x) \quad ; \quad  \bar{f}(x) = \frac{1}{\bar{Y}\bar{Z}} \int_0^{\bar{Y}} \int_0^{\bar{Z}} f(\bx) \, \d z \, \d y   \label{cHeq}
+\ee
+with boundary conditions at the ends of the tunnel:
+\be
+   \frac{\d \bar{\cH}}{\d x} = \bar{b}_{x,m}  \quad \hbox{or} \quad \bar{\cH} = \bar{b}_{x,m} \quad ; \quad \bar{b}_{x,m} = \frac{1}{\bar{Y}\bar{Z}} \int_0^{\bar{Y}} \int_0^{\bar{Z}} b_{x,m}(y,z) \, \d z \, \d y
+\ee
+Now solve in each mesh using the 3-D Poisson solver:
+\be
+   \nabla^2 \cH' = f(\bx) - \bar{f}(x) \label{pe2}
+\ee
+with boundary conditions at the left and right face of each mesh, including the ends of the tunnel:
+\be
+   \dod{\cH'}{x} = b_{x,m}(y,z) - \bar{b}_{x,m}  \quad \hbox{or} \quad \cH' = b_{x,m}(y,z) -  \bar{b}_{x,m}
+\ee
+The averaging term, $\bar{\cH}$, handles the significant fluctuations in pressure that are caused by the fluctuations in the fire's heat release rate. $\cH'$ is much easier to solve for because it does not include the large pressure fluctuations.
+
+To implement this in FDS, the terms $\bar{f}$ and $\bar{b}_{x,m}$ are gathered to the root MPI process which solves the tri-diagonal linear system resulting from discretizing Eq.~(\ref{cHeq}). The resulting solution is then broadcast to the other MPI processes and added to the solution of Eq.~(\ref{pe2}) which is computed on each individual mesh independently. The decomposition and reconstruction of $\cH$ is all done within the pressure solving step, reducing the memory requirements to just the 1-D array of $\bar{\cH}$.
+
+
 
 
