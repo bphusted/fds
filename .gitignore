@@ -20,6 +20,7 @@ fds2ascii_*
 smokediff_*
 smokezip_*
 wind2fds_*
+fds_impi*
 
 # latex output files
 *.aux
@@ -74,3 +75,6 @@ Validation/*/FDS_Output_Files/*.csv
 
 #Manuale
 Manuals/FDS_User_Guide/FIGURES
+
+.fdsinfo
+fds_mpi_gnu*
