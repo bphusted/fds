@@ -8954,6 +8954,14 @@ ENDIF
 ! Create arrays to be used in the special pressure solver for tunnels
 
 IF (TUNNEL_PRECONDITIONER) THEN
+   IF (NMESHES==1) THEN
+      WRITE(MESSAGE,'(A)') 'WARNING: TUNNEL_PRECONDITIONER is not appropriate for a single mesh'
+      IF (MY_RANK==0) WRITE(LU_ERR,'(A)') TRIM(MESSAGE)
+   ENDIF
+   IF (NMESHES/=N_MPI_PROCESSES) THEN
+      CALL SHUTDOWN('ERROR: TUNNEL_PRECONDITIONER requires the number of meshes to equal the number of MPI processes')
+      RETURN
+   ENDIF
    IF (MAX_PRESSURE_ITERATIONS<20) MAX_PRESSURE_ITERATIONS = 20
    TUNNEL_NXP = 0
    DO NM=1,NMESHES
@@ -12918,12 +12926,18 @@ READ_DEVC_LOOP: DO NN=1,N_DEVC_READ
 
       IF (TEMPORAL_STATISTIC=='FAVRE AVERAGE') THEN
          SPATIAL_STATISTIC='MASS MEAN'
-         XB(1) = XYZ(1)
-         XB(2) = XYZ(1)
-         XB(3) = XYZ(2)
-         XB(4) = XYZ(2)
-         XB(5) = XYZ(3)
-         XB(6) = XYZ(3)
+         CALL SEARCH_OTHER_MESHES(XYZ(1),XYZ(2),XYZ(3),NM,IIG,JJG,KKG,XI,YJ,ZK)
+         IF (IIG>0 .AND. JJG>0 .AND. KKG>0) THEN
+            M => MESHES(NM)
+            XB(1) = M%X(IIG-1)
+            XB(2) = M%X(IIG)
+            XB(3) = M%Y(JJG-1)
+            XB(4) = M%Y(JJG)
+            XB(5) = M%Z(KKG-1)
+            XB(6) = M%Z(KKG) 
+         ELSE
+            XB = 0._EB
+         ENDIF
       ENDIF
 
       ! Determine which mesh the device is in
