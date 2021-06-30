@@ -3723,7 +3723,35 @@ For a liquid fuel, the thermal properties are similar to those of a solid materi
 \end{lstlisting}
 The inclusion of {\ct BOILING\_TEMPERATURE} on the {\ct MATL} line tells FDS to use its liquid pyrolysis model. It also automatically sets {\ct N\_REACTIONS=1}, that is, the only ``reaction'' is the phase change from liquid to gaseous fuel. Thus, {\ct HEAT\_OF\_REACTION} in this case is the latent heat of vaporization. The thermal conductivity, density and specific heat are used to compute the loss of heat into the liquid via conduction using the same one-dimensional heat transfer equation that is used for solids. Obviously, the convection of the liquid is important, but is not considered in the model. The {\ct ABSORPTION\_COEFFICIENT} denotes the absorption in depth of thermal radiation into the liquid. Liquids do not just absorb radiation at the surface, but rather over a thin layer near the surface. Its effect on the burning rate can be significant.
 
-In this example, {\ct 'ETHANOL'} is a {\em known} species; that is, it is listed in Table~\ref{tab:gasspecies}. For this reason, you only need to specify its CO and soot yield. If it is not known, then you must furnish additional information. Section~\ref{user_defined_gas_species_props} contains details, but in brief, only the molecular weight of the gas species is of relevance for the liquid pool evaporation model.
+In this example, {\ct 'ETHANOL'} is a {\em known} species; that is, it is listed in Table~\ref{tab:gasspecies}. For this reason, you only need to specify its CO and soot yield. If it is not known, then you must furnish additional information. Section~\ref{user_defined_gas_species_props} contains details, but in brief, only the molecular weight of the gas species is of relevance for the liquid pool evaporation model. If the liquid has multiple components, like gasoline or kerosene, you can furnish an individual {\ct MATL} line for each component. For practical reasons, in such cases you might still want to assume only one gas phase fuel species; thus, each {\ct MATL} line would contain the same {\ct SPEC\_ID}. If this is the case, provide the liquid component molecular weights, {\ct MW}, with units of g/mol on the {\ct MATL} lines. These unique molecular weights are used when computing the evaporation rates of the individual liquid components.
+
+
+\subsubsection{Liquid Mixtures}
+\label{liquid_mixture}
+
+Most liquid fuels of interest in fire protection engineering are not pure liquids, but rather blends, like gasoline. Each component liquid has a unique boiling point, heat of vaporization, molecular weight, and specific heat that affect its evaporation rate. It is possible to specify the individual liquid components, but have them all evaporate to form the same gaseous fuel vapor. The reason for this is to save on computing cost. If each component were to evaporate to form a unique gaseous fuel species, a separate transport equation and combustion reaction would needed for each. Consider the following example---a mixture of hydrocarbon fuels is mixed with water forming an emulsion. The pool is specified as follows:
+\begin{lstlisting}
+&SPEC ID='WATER VAPOR' /
+&REAC FUEL='N-HEXANE' /
+&SURF ID        = 'POOL'
+      COLOR     = 'YELLOW'
+      MATL_ID(1,1:6) = 'HEXANE','HEPTANE','OCTANE','DECANE','BENZENE','WATER'
+      MATL_MASS_FRACTION(1,1:6) = 0.521,0.054,0.063,0.023,0.200,0.139
+      THICKNESS = 0.002 /
+\end{lstlisting}
+Water is to evaporate and form {\ct 'WATER VAPOR'}, but the other components are all to form {\ct 'N-HEXANE'}. On each {\ct MATL} line for each liquid component, either {\ct 'WATER VAPOR'} or {\ct 'N-HEXANE'} is declared as the {\ct SPEC\_ID}, along with the {\ct BOILING\_TEMPERATURE}, {\ct MW}, {\ct SPECIFIC\_HEAT}, and {\ct HEAT\_OF\_REACTION} (i.e. the heat of vaporization). Additionally, a {\ct HEAT\_OF\_COMBUSTION} may be specified on the {\ct MATL} line to indicate that the liquid component has a different heat of combustion than n-hexane and FDS should adjust its evaporation rate accordingly.
+
+An example demonstrating evaporation of a liquid mixture is found in the {\ct Pyrolysis} folder and called {\ct liquid\_mixture.fds}. In this example, a 1~m by 1~m by 2~mm deep pool containing a mixture of hydrocarbon liquids and water is completely evaporated to form water vapor and the surrogate gaseous fuel vapor, n-hexane. Figure~\ref{liquid_mixture_plot} displays the mass of water and fuel vapor as a function of time.
+
+\begin{figure}[ht]
+\begin{center}
+\includegraphics[width=3.2in]{SCRIPT_FIGURES/liquid_mixture}
+\end{center}
+\caption[Results of the {\ct liquid\_mixture} test case]{Evaporated mass of water and fuel species from an emulsified liquid fuel.}
+\label{liquid_mixture_plot}
+\end{figure}
+
+
 
 \subsubsection{Heat and Mass Transfer with Blowing}
 
@@ -5087,6 +5115,7 @@ Species &   Mol.~Wt.            & Formula          & $\sigma$ & $\epsilon/k$   &
 {\ct N-HEPTANE}          & 100.201940 & C$_7$H$_{16}$    & 4.701    & 205.75   &  Y       & 0.83  &  {\ct N-HEPTANE}           \\ \hline
 {\ct N-HEXANE}           & 86.175360  & C$_6$H$_{12}$    & 5.949    & 399.3    &  Y       & 0.79 &  {\ct N-HEPTANE}           \\ \hline
 {\ct N-OCTANE}           & 114.228520 & C$_8$H$_{18}$    & 4.892    & 231.16   &  Y       & 0.64 &  {\ct N-HEPTANE}           \\ \hline
+{\ct N-PENTANE}          & 72.148780  & C$_5$H$_{12}$    & 5.784    & 341.1   &  Y       & 0.79 &  {\ct N-HEPTANE}           \\ \hline
 {\ct NITRIC OXIDE}       & 30.006100  & NO               & 3.492    & 116.7    &  Y       & 0.74 &                            \\ \hline
 {\ct NITROGEN}           & 28.013400  & N$_2$            & 3.798    & 71.4     &  Y       & 0.71 &                            \\ \hline
 {\ct NITROGEN ATOM}      & 14.006700  & N                & 2.66     & 92.1     &          & 0.71 &                            \\ \hline
@@ -5542,6 +5571,7 @@ Fuel              & Formula          & $X_{\rm OI}$    & $T_{\rm OI}$ ($^\circ$C
 {\ct N-HEPTANE}   & C$_7$H$_{16}$    & 0.134        & 1497 \\ \hline
 {\ct N-HEXANE}    & C$_6$H$_{14}$    & 0.134        & 1497 \\ \hline
 {\ct N-OCTANE}    & C$_8$H$_{18}$    & 0.134        & 1507 \\ \hline
+{\ct N-PENTANE}   & C$_5$H$_{12}$    & 0.134        & 1487 \\ \hline
 {\ct PROPANE}     & C$_3$H$_8$       & 0.127        & 1447 \\ \hline
 All other species &                  & 0.135        & 1427 \\ \hline
 \end{tabular}
@@ -9892,7 +9922,7 @@ Instead of specifying a plane on which to draw contours of gas temperature, you 
 
 The second method of visualizing data on complex terrain is via a boundary ({\ct BNDF}) file. Specify a solid phase output quantity as you normally would, for example:
 \begin{lstlisting}
-&SLCF QUANTITY='WALL TEMPERATURE' /
+&BNDF QUANTITY='WALL TEMPERATURE' /
 \end{lstlisting}
 and add {\ct TERRAIN\_CASE=T} to the {\ct MISC} line. This will create two boundary files---one of which is the conventional one, and one will be listed as a ``slice'' file that conforms to the terrain.
 
@@ -10306,6 +10336,7 @@ Here, the {\ct ID} is just a label in the output file. When an output quantity i
 {\ct NUMBER OF PARTICLES}                       & Section~\ref{info:TIMING}                     &                & D            \\ \hline
 {\ct OPEN NOZZLES}                              & Section~\ref{info:TIMING}                     &                & D            \\ \hline
 {\ct OPTICAL DENSITY}                           & Section~\ref{info:visibility}                 & 1/m            & D,I,P,S      \\ \hline
+{\ct ORIENTED VELOCITY}$^5$                     & $(u,v,w)\cdot(n_x,n_y,n_z)$                   & m/s            & D            \\ \hline
 {\ct PATH OBSCURATION}                          & Section~\ref{info:beam_detector}              & \%             & D            \\ \hline
 {\ct PARTICLE AGE}                              & Section~\ref{info:part_output}                & s              & PA           \\ \hline
 {\ct PARTICLE DIAMETER}                         & Section~\ref{info:part_output}                & $\mu$m         & PA           \\ \hline
@@ -10373,7 +10404,8 @@ $^1$  \hspace{0.05in} \= Requires the specification of a gas species using {\ct 
 $^2$                  \> Requires the specification of a particle name using {\ct PART\_ID}. \\
 $^3$                  \> Add {\ct VELO\_INDEX=1} to the input line if you want to multiply the velocity by the sign of $u$. \\
                       \> Use the indices 2 and 3 for $v$ and $w$, respectively.\\
-$^4$                  \> Allows for an optional {\ct MATL\_ID}.
+$^4$                  \> Allows for an optional {\ct MATL\_ID}.\\
+$^5$                  \> Requires an {\ct ORIENTATION} on the {\ct DEVC} line.
 
 \end{tabbing}
 
@@ -11244,6 +11276,7 @@ $\Delta t$={\ct T\_END-T\_BEGIN}
 {\ct HEAT\_OF\_REACTION\_RAMP(:)}   & Char.~Array     & Section~\ref{info:RAMP_Temperature}   &                   &               \\ \hline
 {\ct ID}                            & Character       & Section~\ref{info:SURF_MATL_Basics}   &                   &               \\ \hline
 {\ct MATL\_ID(:,:)}                 & Character       & Section~\ref{info:solid_pyrolysis}    &                   &               \\ \hline
+{\ct MW}                            & Real            & Section~\ref{info:liquid_fuels}       & g/mol             &               \\ \hline
 {\ct N\_O2(:)}                      & Real Array      & Section~\ref{info:solid_pyrolysis}    &                   & 0.            \\ \hline
 {\ct N\_REACTIONS}                  & Integer         & Section~\ref{info:solid_pyrolysis}    &                   & 0             \\ \hline
 {\ct N\_S(:)}                       & Real Array      & Section~\ref{info:solid_pyrolysis}    &                   & 1.            \\ \hline
