@@ -25,7 +25,6 @@ addpath 'scripts'
 
 % Scripts to run prior to dataplot
 
-disp('convective_cooling_convergence...'); convective_cooling_convergence
 
 % Dataplot and scatplot options
 
@@ -49,17 +48,5 @@ scatplot(saved_data, drange, ...
          'Scatterplot_Dir', Scatterplot_Dir)
 
 % Special cases
-
-disp('compression_wave...');              compression_wave
-disp('rotcube_cc_mms_error...');          rotcube_cc_mms_error
-disp('mass_balance_reac...');             mass_balance_reac
-disp('mass_balance_gas_volume...');       mass_balance_gas_volume
-disp('geom_positive_errors...');          geom_positive_errors
-disp('geom_channel_test...');             geom_channel_test
-disp('htc_forced...');                    htc_forced
-disp('natconh...');                       natconh
-disp('natconv...');                       natconv
-disp('freecon_sphere...');                freecon_sphere
-disp('nat_conv_hot_plate...');            nat_conv_hot_plate
 
 display('verification scripts completed successfully!')

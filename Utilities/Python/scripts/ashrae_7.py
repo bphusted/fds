@@ -27,15 +27,10 @@ label = [
 
 pressure = np.zeros((4, 8))
 
-skip_case = False
-
 for i in range(len(filename)):
    name = datadir+filename[i]
    if not os.path.exists(name):
-      skip_case = True
       print('Error: File ', filename[i], ' does not exist. Skipping case.')
-
-if skip_case: quit()
 
 M = pd.read_csv(datadir+filename[0],skiprows=6,header=None)
 
@@ -77,4 +72,3 @@ with open(texname, 'w') as fid:
    fid.write('\\end{tabular}\n')
    fid.write('\\end{center}\n')
 
-print(f"\n? Successfully generated LaTeX table in {texname}")

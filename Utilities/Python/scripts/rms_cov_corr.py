@@ -16,13 +16,8 @@ datadir = '../../Verification/Controls/'
 plotdir = '../../Manuals/FDS_Verification_Guide/SCRIPT_FIGURES/'
 filename = datadir + 'rms_cov_corr_devc.csv'
 
-skip_case = False
-
 if not os.path.exists(filename):
-   skip_case = True
    print('Error: File ', filename, ' does not exist. Skipping case.')
-
-if skip_case: quit()
 
 df = pd.read_csv(filename, skiprows=2, header=None)
 
@@ -59,16 +54,11 @@ outdata[:,1] = urms
 outdata[:,2] = uwcov
 outdata[:,3] = uwcorr
 
-print(header)
-print(outdata)
-
 with open(datadir+'rms_cov_corr.csv','w') as fid:
    fid.write(f"{header}\n")
    string_with_separator = np.array2string(outdata[0,:], separator=', ')[1:-1] # [1:-1] removes brackets
-   print(string_with_separator)
    fid.write(f"{string_with_separator}\n")
    string_with_separator = np.array2string(outdata[1,:], separator=', ')[1:-1] # [1:-1] removes brackets
-   print(string_with_separator)
    fid.write(f"{string_with_separator}\n")
 
 

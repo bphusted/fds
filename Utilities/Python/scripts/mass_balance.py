@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """
 mass_balance.py
 Validates mass conservation comparing time derivative of species mass with inlet/outlet flow rates.
@@ -57,7 +56,10 @@ def plot_mass_balance(chid, title_text):
     ax    = plt.gca()
     lines = ax.get_lines()
     lines[2].set_color('orange')         # Orange for outlet (second data line)
-    fdsplotlib.apply_global_exponent(ax, axis='y')   
+    legend = ax.get_legend()
+    if legend:
+        legend.legend_handles[1].set_color('orange')  # Second legend entry (Outlet H2O)
+
     ax.text(100, 18e-3, title_text,fontsize=plot_style['Title_Font_Size'],fontname=plot_style['Font_Name'])
     
     # Compute mean error for t > 1000 s
@@ -81,7 +83,6 @@ def plot_mass_balance(chid, title_text):
 if __name__ == '__main__':
     """Main execution block"""
     
-    print("Running mass balance verification plots...")
     error1 = plot_mass_balance('mass_flux_wall_yindex','Primitive Species Mass Balance')
     error2 = plot_mass_balance('mass_flux_wall_zindex','Lumped Species Mass Balance')
-    print("Mass balance verification completed successfully!")
+

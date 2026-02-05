@@ -1,13 +1,5 @@
-#!/usr/bin/env python3
-# B M Ralph
-# 12-8-2016
-# hvac_mass_transport.py
-#
-# Converted by Floyd
-# 10-14-2025
-#
-# Convergence study for HVAC transient mass transport (mass fraction at
-# downstream duct node).
+
+# Convergence study for HVAC transient mass transport (mass fraction at downstream duct node).
 
 import os
 import numpy as np
@@ -41,15 +33,10 @@ t_end = 2.0
 u = 1.0
 L = 1.0
 
-skip_case = False
-
 for i in range(len(filename)):
    name = datadir+filename[i]
    if not os.path.exists(name):
-      skip_case = True
       print('Error: File ', filename[i], ' does not exist. Skipping case.')
-
-if skip_case: quit()
 
 # --- Analytical Solution ---
 

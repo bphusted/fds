@@ -1,17 +1,9 @@
-# Overholt
-# 6-13-2012
-# cat_propane_depo.m
-#
-# Concatenates columns from Propane flame deposition FDS cases (/Verification/Aerosols)
-#
-# Converted by Floyd
-# 10-16-2025
 
+# Concatenates columns from Propane flame deposition FDS cases (/Verification/Aerosols)
 
 import pandas as pd
 import numpy as np
 import os
-
 
 outdir = '../../Verification/Aerosols/'
 
@@ -34,15 +26,10 @@ wall_columns = [
     'depo_turbulent'
 ]
 
-skip_case = False
-
 for i in range(len(wall_files)):
    name = outdir+wall_files[i]
    if not os.path.exists(name):
-      skip_case = True
       print('Error: File ', wall_files[i], ' does not exist. Skipping case.')
-
-if skip_case: quit()
 
 # Read data from the wall deposition files
 wall_data = {}
@@ -78,7 +65,6 @@ H1_df = pd.DataFrame([H1_units, H1_names], columns=D1.columns)
 D1_final = pd.concat([H1_df, D1]).reset_index(drop=True)
 
 D1_final.to_csv(outdir+'propane_flame_deposition_cat_wall.csv', header=False, index=False)
-print(f"Written condensed phase aerosol data to propane_flame_deposition_cat_wall.csv")
 
 # List of files for gas phase aerosol (mass loss)
 gas_files = [
@@ -100,10 +86,7 @@ gas_columns = [
 for i in range(len(gas_files)):
    name = outdir+gas_files[i]
    if not os.path.exists(name):
-      skip_case = True
       print('Error: File ', gas_files[i], ' does not exist. Skipping case.')
-
-if skip_case: quit()
 
 # Read data from the gas mass files
 gas_data = {}
@@ -140,7 +123,6 @@ D2_final = pd.concat([H2_df, D2]).reset_index(drop=True)
 
 # Write to CSV
 D2_final.to_csv(outdir+'propane_flame_deposition_cat_gas.csv', header=False, index=False)
-print(f"Written gas phase aerosol data to propane_flame_deposition_cat_gas.csv")
 
 # Create DataFrame D3
 D3 = pd.DataFrame({
@@ -164,4 +146,3 @@ D3_final = pd.concat([H3_df, D3]).reset_index(drop=True)
 
 # Write to CSV
 D3_final.to_csv(outdir+ 'propane_flame_deposition_cat_total.csv', header=False, index=False)
-print(f"Written total aerosol data to propane_flame_deposition_cat_total.csv")
