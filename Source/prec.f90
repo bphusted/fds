@@ -34,15 +34,15 @@ INTEGER, PARAMETER :: FN_LENGTH=FILE_LENGTH+CHID_LENGTH     !< Length for output
 INTEGER, PARAMETER :: N_OUTPUT_QUANTITIES=600        !< Dimension of array that holds names of output quantities
 INTEGER, PARAMETER :: POINTS_ARRAY_DIM=100           !< Dimension of arrays of linear device coordinates
 
-REAL(EB), PARAMETER :: ONE_M_EPS=1._EB-100._EB*EPSILON(1._EB) !< Number that is slightly less than 1
-REAL(EB), PARAMETER :: ONE_P_EPS=1._EB+100._EB*EPSILON(1._EB) !< Number that is slightly greater than 1
-REAL(EB), PARAMETER :: MICRON=1.E-6_EB                        !< A relatively small length (m)
-REAL(QB), PARAMETER :: TWO_EPSILON_QB=2._QB*EPSILON(1._QB)    !< A very small number 16 byte accuracy
-REAL(EB), PARAMETER :: TWO_EPSILON_EB=2._EB*EPSILON(1._EB)    !< A very small number 8 byte accuracy
-REAL(FB), PARAMETER :: TWO_EPSILON_FB=2._EB*EPSILON(1._FB)    !< A very small number 4 byte accuracy
-REAL(EB), PARAMETER :: TINY_EB=TINY(1._EB)                    !< The smallest resolvable 8 byte real number
-REAL(EB), PARAMETER :: HUGE_EB=HUGE(1._EB)                    !< The largest resolvable 8 btye real number
-REAL(EB), PARAMETER :: HUGE_FB=HUGE(1._FB)                    !< A large number but not too large for various operations
+REAL(EB), PARAMETER :: ONE_M_EPS=1._EB-100._EB*EPSILON(1._EB)  !< Number that is slightly less than 1
+REAL(EB), PARAMETER :: ONE_P_EPS=1._EB+100._EB*EPSILON(1._EB)  !< Number that is slightly greater than 1
+REAL(EB), PARAMETER :: MICRON=1.E-6_EB                         !< A relatively small length (m)
+REAL(EB), PARAMETER :: TWENTY_EPSILON_EB=20._EB*EPSILON(1._EB) !< A very small number 8 byte accuracy
+REAL(EB), PARAMETER :: TEN_EPSILON_EB   =10._EB*EPSILON(1._EB) !< A very small number 8 byte accuracy
+REAL(EB), PARAMETER :: TWO_EPSILON_EB   = 2._EB*EPSILON(1._EB) !< A very small number 8 byte accuracy
+REAL(EB), PARAMETER :: TINY_EB=TINY(1._EB)                     !< The smallest resolvable 8 byte real number
+REAL(EB), PARAMETER :: HUGE_EB=HUGE(1._EB)                     !< The largest resolvable 8 btye real number
+REAL(EB), PARAMETER :: HUGE_FB=HUGE(1._FB)                     !< A large number but not too large for various operations
 
 ! Often used numbers
 
@@ -52,5 +52,6 @@ REAL(EB), PARAMETER :: PI=4._EB*ATAN(1.0_EB), SQRTPI=SQRT(PI), RPI=1._EB/PI, TWO
                        RFPI=1._EB/(4._EB*PI), FOTHPI = FOTH*PI, CR2=2._EB**(1._EB/3._EB)
 INTEGER, PARAMETER  :: INTEGER_ZERO=0,INTEGER_ONE=1,INTEGER_TWO=2,INTEGER_THREE=3
 REAL(EB), PARAMETER :: DEG2RAD=PI/180.0_EB
+REAL(EB), PARAMETER :: LOGTEN = LOG(10._EB)
 
 END MODULE PRECISION_PARAMETERS

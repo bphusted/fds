@@ -1,4 +1,6 @@
 
+# Plot results of the Heskestad_Flame_Height cases against various experimental correlations
+
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -86,7 +88,7 @@ fig = fdsplotlib.plot_to_fig(x_data=[1e-6,1e-6], y_data=[1e-6,1e-6],
                              plot_title = 'Flame Height Variation',
                              plot_type='loglog',
                              x_label='$Q^*$',
-                             y_label='$L_{\\hbox{f}}/D$')
+                             y_label=r'$L_{\rm f}/D$')
 
 # Load experimental data
 M = pd.read_csv(os.path.join(expdir, 'flame_lengths.csv'), skiprows=0)
@@ -101,10 +103,10 @@ Cetegen = data[:, 9]
 Delichatsios = data[:, 10]
 
 fdsplotlib.plot_to_fig(x_data=Qstar, y_data=Steward, marker_style='k-', figure_handle=fig, data_label='Steward')
-fdsplotlib.plot_to_fig(x_data=Qstar, y_data=Becker_and_Liang, marker_style='g-', figure_handle=fig, data_label=r'Becker \& Liang')
-fdsplotlib.plot_to_fig(x_data=Qstar[1:16], y_data=Cox_and_Chitty[1:16], marker_style='c-', figure_handle=fig, data_label=r'Cox \& Chitty')
+fdsplotlib.plot_to_fig(x_data=Qstar, y_data=Becker_and_Liang, marker_style='g-', figure_handle=fig, data_label=r'Becker & Liang')
+fdsplotlib.plot_to_fig(x_data=Qstar[1:16], y_data=Cox_and_Chitty[1:16], marker_style='c-', figure_handle=fig, data_label=r'Cox & Chitty')
 fdsplotlib.plot_to_fig(x_data=Qstar, y_data=Heskestad, marker_style='r-', figure_handle=fig, data_label='Heskestad')
-fdsplotlib.plot_to_fig(x_data=Qstar[2:16], y_data=Hasemi_and_Tokunaga[2:16], marker_style='m-', figure_handle=fig, data_label=r'Hasemi \& Tokunaga')
+fdsplotlib.plot_to_fig(x_data=Qstar[2:16], y_data=Hasemi_and_Tokunaga[2:16], marker_style='m-', figure_handle=fig, data_label=r'Hasemi & Tokunaga')
 fdsplotlib.plot_to_fig(x_data=Qstar, y_data=Cetegen, marker_style='b-', figure_handle=fig, data_label='Cetegen')
 fdsplotlib.plot_to_fig(x_data=Qstar, y_data=Delichatsios, marker_style='y-', figure_handle=fig, data_label='Delichatsios')
 fdsplotlib.plot_to_fig(x_data=Qstar, y_data=np.max(L_99[:, :3], axis=1), marker_style='r--', figure_handle=fig, data_label='Max FDS 99 %')

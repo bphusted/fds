@@ -1,9 +1,9 @@
+!> \brief Find the perturbation pressure by solving Poisson's equation using Crayfishpak FFT-based solver
+
 MODULE PRES
 
-! Find the perturbation pressure by solving Poisson's Equation
-
 USE PRECISION_PARAMETERS
-USE MESH_VARIABLES
+USE MESH_POINTERS
 
 IMPLICIT NONE (TYPE,EXTERNAL)
 PRIVATE
@@ -15,11 +15,10 @@ CONTAINS
 
 SUBROUTINE PRESSURE_SOLVER_COMPUTE_RHS(T,DT,NM)
 
-USE MESH_POINTERS
 USE COMP_FUNCTIONS, ONLY: CURRENT_TIME
 USE MATH_FUNCTIONS, ONLY: EVALUATE_RAMP
-USE GLOBAL_CONSTANTS
-
+USE GLOBAL_CONSTANTS, ONLY: SOLID_PHASE_ONLY,FREEZE_VELOCITY,PREDICTOR,NEUMANN,DIRICHLET,OPEN_BOUNDARY,INTERPOLATED_BOUNDARY,&
+                            T_BEGIN,U0,V0,W0,OPEN_WIND_BOUNDARY,CYLINDRICAL,T_USED
 INTEGER, INTENT(IN) :: NM
 REAL(EB), INTENT(IN) :: T,DT
 REAL(EB), POINTER, DIMENSION(:,:,:) :: UU,VV,WW,HP,RHOP
@@ -149,7 +148,7 @@ WALL_CELL_LOOP: DO IW=1,N_EXTERNAL_WALL_CELLS
 
          B1 => BOUNDARY_PROP1(WC%B1_INDEX)
          VT => VENTS(WC%VENT_INDEX)
-         IF (ABS(B1%T_IGN-T_BEGIN)<=TWO_EPSILON_EB .AND. VT%PRESSURE_RAMP_INDEX >=1) THEN
+         IF (ABS(B1%T_IGN-T_BEGIN)<=TWENTY_EPSILON_EB .AND. VT%PRESSURE_RAMP_INDEX >=1) THEN
             TSI = T
          ELSE
             TSI = T - T_BEGIN
@@ -318,11 +317,10 @@ END SUBROUTINE PRESSURE_SOLVER_COMPUTE_RHS
 
 SUBROUTINE PRESSURE_SOLVER_FFT(NM)
 
-USE MESH_POINTERS
 USE POIS, ONLY: H3CZSS,H2CZSS,H2CYSS,H3CSSS
 USE COMP_FUNCTIONS, ONLY: CURRENT_TIME
-USE GLOBAL_CONSTANTS
-
+USE GLOBAL_CONSTANTS, ONLY: SOLID_PHASE_ONLY,FREEZE_VELOCITY,PREDICTOR,TWO_D,CYLINDRICAL,TUNNEL_PRECONDITIONER,H_BAR,I_OFFSET,&
+                            T_USED
 INTEGER, INTENT(IN) :: NM
 REAL(EB), POINTER, DIMENSION(:,:,:) :: HP
 INTEGER :: I,J,K
@@ -507,9 +505,11 @@ END SUBROUTINE PRESSURE_SOLVER_FFT
 SUBROUTINE TUNNEL_POISSON_SOLVER
 
 USE MPI_F08
-USE GLOBAL_CONSTANTS
+USE GLOBAL_CONSTANTS, ONLY: LOWER_MESH_INDEX,UPPER_MESH_INDEX,PRES_FLAG,ULMAT_FLAG,TP_RDXN,I_OFFSET,NMESHES,&
+                            TP_AA,TP_BB,TP_CC,TP_DD,FISHPAK_BC_DIRICHLET_NEUMANN,FISHPAK_BC_NEUMANN_NEUMANN,&
+                            FISHPAK_BC_NEUMANN_DIRICHLET,TUNNEL_NXP,MY_RANK,DISPLS_TP,COUNTS_TP,H_BAR,T_USED
 USE COMP_FUNCTIONS, ONLY: CURRENT_TIME
-REAL(EB) :: RR,DXO
+REAL(EB) :: RR,DXO,SECTION_AREA_XS,SECTION_AREA_XF
 INTEGER :: IERR,II,NM,I,J,K
 REAL(EB) :: TNOW
 TYPE (MESH_TYPE), POINTER :: M
@@ -566,14 +566,36 @@ MESH_LOOP_1: DO NM=LOWER_MESH_INDEX,UPPER_MESH_INDEX
 
    M%BXS_BAR = 0._EB
    M%BXF_BAR = 0._EB
-   DO K=1,M%KBAR
-     DO J=1,M%JBAR
-         M%BXS_BAR = M%BXS_BAR + M%BXS(J,K)*M%DY(J)*M%DZ(K)
-         M%BXF_BAR = M%BXF_BAR + M%BXF(J,K)*M%DY(J)*M%DZ(K)
+   IF(PRES_FLAG==ULMAT_FLAG) THEN
+      SECTION_AREA_XS = TWO_EPSILON_EB
+      SECTION_AREA_XF = TWO_EPSILON_EB
+      DO K=1,M%KBAR
+         DO J=1,M%JBAR
+            IF(M%CELL(M%CELL_INDEX(0,J,K))%SOLID .OR. M%CELL(M%CELL_INDEX(1,J,K))%SOLID) CYCLE
+            M%BXS_BAR = M%BXS_BAR + M%BXS(J,K)*M%DY(J)*M%DZ(K)
+            SECTION_AREA_XS = SECTION_AREA_XS + M%DY(J)*M%DZ(K)
+         ENDDO
       ENDDO
-   ENDDO
-   M%BXS_BAR = M%BXS_BAR/((M%YF-M%YS)*(M%ZF-M%ZS))  ! Left boundary condition, bar(b)_x,1
-   M%BXF_BAR = M%BXF_BAR/((M%YF-M%YS)*(M%ZF-M%ZS))  ! Right boundary condition, bar(b)_x,2
+      DO K=1,M%KBAR
+         DO J=1,M%JBAR
+            IF(M%CELL(M%CELL_INDEX(M%IBAR,J,K))%SOLID .OR. M%CELL(M%CELL_INDEX(M%IBP1,J,K))%SOLID) CYCLE
+            M%BXF_BAR = M%BXF_BAR + M%BXF(J,K)*M%DY(J)*M%DZ(K)
+            SECTION_AREA_XF = SECTION_AREA_XF + M%DY(J)*M%DZ(K)
+         ENDDO
+      ENDDO
+   ELSE
+      DO K=1,M%KBAR
+         DO J=1,M%JBAR
+            M%BXS_BAR = M%BXS_BAR + M%BXS(J,K)*M%DY(J)*M%DZ(K)
+            M%BXF_BAR = M%BXF_BAR + M%BXF(J,K)*M%DY(J)*M%DZ(K)
+         ENDDO
+      ENDDO
+      SECTION_AREA_XS=((M%YF-M%YS)*(M%ZF-M%ZS))
+      SECTION_AREA_XF=((M%YF-M%YS)*(M%ZF-M%ZS))
+   ENDIF
+
+   M%BXS_BAR = M%BXS_BAR/SECTION_AREA_XS  ! Left boundary condition, bar(b)_x,1
+   M%BXF_BAR = M%BXF_BAR/SECTION_AREA_XF  ! Right boundary condition, bar(b)_x,2
 
    M%BXS = M%BXS - M%BXS_BAR  ! This new BXS (b_x,1(j,k)) will be used for the 3-D pressure solve
    M%BXF = M%BXF - M%BXF_BAR  ! This new BXF (b_x,2(j,k)) will be used for the 3-D pressure solve
@@ -625,7 +647,7 @@ ELSE  ! MPI process 0 receives matrix components and solves tri-diagonal linear 
       TP_DD(I) = TP_DD(I) - RR*TP_AA(I-1)
       TP_CC(I) = TP_CC(I) - RR*TP_CC(I-1)
    ENDDO TRIDIAGONAL_SOLVER_1
-   IF (ABS(TP_DD(TUNNEL_NXP))>TWO_EPSILON_EB) THEN
+   IF (ABS(TP_DD(TUNNEL_NXP))>TWENTY_EPSILON_EB) THEN
       TP_CC(TUNNEL_NXP) = TP_CC(TUNNEL_NXP)/TP_DD(TUNNEL_NXP)
       SINGULAR_CASE = .FALSE.
    ELSE  ! Singular matrix when both sides of tunnel have Neumann BC
@@ -673,10 +695,9 @@ END SUBROUTINE TUNNEL_POISSON_SOLVER
 
 SUBROUTINE PRESSURE_SOLVER_CHECK_RESIDUALS(NM)
 
-USE MESH_POINTERS
 USE COMP_FUNCTIONS, ONLY: CURRENT_TIME
-USE GLOBAL_CONSTANTS
-
+USE GLOBAL_CONSTANTS, ONLY: SOLID_PHASE_ONLY,FREEZE_VELOCITY,PREDICTOR,CHECK_POISSON,ITERATE_BAROCLINIC_TERM,PRESSURE_ERROR_MAX,&
+                            PRESSURE_ERROR_MAX_LOC,STORE_PRESSURE_POISSON_RESIDUAL,T_USED
 INTEGER, INTENT(IN) :: NM
 REAL(EB), POINTER, DIMENSION(:,:,:) :: HP,RHOP,P,RESIDUAL
 INTEGER :: I,J,K
@@ -778,10 +799,10 @@ SUBROUTINE COMPUTE_VELOCITY_ERROR(DT,NM)
 
 ! Check the maximum velocity error at a solid boundary
 
-USE MESH_POINTERS
 USE COMP_FUNCTIONS, ONLY: CURRENT_TIME
 USE GLOBAL_CONSTANTS, ONLY: PREDICTOR,VELOCITY_ERROR_MAX,SOLID_BOUNDARY,INTERPOLATED_BOUNDARY,VELOCITY_ERROR_MAX_LOC,T_USED,&
-                            PRES_FLAG,FREEZE_VELOCITY,SOLID_PHASE_ONLY,GLMAT_FLAG,UGLMAT_FLAG,ULMAT_FLAG
+                            PRES_FLAG,FREEZE_VELOCITY,SOLID_PHASE_ONLY,GLMAT_FLAG,UGLMAT_FLAG,ULMAT_FLAG,CC_IBM
+USE COMPLEX_GEOMETRY, ONLY: CC_CGSC,CC_GASPHASE
 
 REAL(EB), INTENT(IN) :: DT
 INTEGER, INTENT(IN) :: NM
@@ -818,9 +839,6 @@ CHECK_WALL_LOOP: DO IW=1,N_EXTERNAL_WALL_CELLS+N_INTERNAL_WALL_CELLS
    IF (WC%BOUNDARY_TYPE/=SOLID_BOUNDARY        .AND. &
        WC%BOUNDARY_TYPE/=INTERPOLATED_BOUNDARY) CYCLE CHECK_WALL_LOOP
 
-   IF (WC%CUT_FACE_INDEX>0) CYCLE CHECK_WALL_LOOP
-
-
    IF (WC%BOUNDARY_TYPE==INTERPOLATED_BOUNDARY) THEN
       EWC=>EXTERNAL_WALL(IW)
       IF (EWC%AREA_RATIO<0.9_EB) CYCLE CHECK_WALL_LOOP
@@ -835,6 +853,10 @@ CHECK_WALL_LOOP: DO IW=1,N_EXTERNAL_WALL_CELLS+N_INTERNAL_WALL_CELLS
    JJ  = BC%JJ
    KK  = BC%KK
    IOR = BC%IOR
+
+   IF (CC_IBM) THEN
+      IF (ANY((/CCVAR(BC%IIG,BC%JJG,BC%KKG,CC_CGSC),CCVAR(II,JJ,KK,CC_CGSC)/)/=CC_GASPHASE)) CYCLE CHECK_WALL_LOOP
+   ENDIF
 
    DHFCT = 1._EB
    IF (WC%BOUNDARY_TYPE==SOLID_BOUNDARY) THEN
@@ -1064,7 +1086,6 @@ MODULE LOCMAT_SOLVER
 
 USE PRECISION_PARAMETERS
 USE GLOBAL_CONSTANTS
-USE MESH_VARIABLES
 USE MESH_POINTERS
 #ifdef WITH_MKL
 USE MKL_PARDISO
@@ -1429,13 +1450,14 @@ INTEGER, INTENT(IN) :: NM, IPZ
 
 ! Local Variables:
 INTEGER :: NRHS,MAXFCT,MNUM,ERROR,I,J,K,ICC,JCC,IIG,JJG,KKG,IOR,IW,IROW,NCELL,ICFACE,IFACE,JFACE,ICVL,ILH,JLH,KLH,IRC
-REAL(EB):: SUM_FH(1:2),MEAN_FH,SUM_XH(1:2),MEAN_XH,DIV_FN_VOL,DIV_FN,IDX,AF,VAL,BCV,DHDN
+REAL(EB):: SUM_FH(1:2),MEAN_FH,SUM_XH(1:2),MEAN_XH,SUM_GAUGE(2),SHIFT_H,DIV_FN_VOL,DIV_FN,IDX,AF,VAL,BCV,DHDN, &
+           VOL,RHO_CC,KRES_CC
 TYPE(ZONE_MESH_TYPE), POINTER :: ZM
 TYPE (WALL_TYPE),  POINTER :: WC
 TYPE (EXTERNAL_WALL_TYPE),  POINTER :: EWC
 TYPE (CFACE_TYPE), POINTER :: CFA
 TYPE (BOUNDARY_COORD_TYPE), POINTER :: BC
-REAL(EB), POINTER, DIMENSION(:,:,:) :: HP
+REAL(EB), POINTER, DIMENSION(:,:,:) :: HP,RHOP
 #ifdef WITH_MKL
 INTEGER :: PHASE, PERM(1)
 #endif
@@ -1765,6 +1787,56 @@ H_INDEFINITE_IF_2 : IF (ZM%MTYPE==SYMM_INDEFINITE ) THEN
       ENDIF
    ENDDO
 ENDIF H_INDEFINITE_IF_2
+
+IF (ZM%MTYPE==SYMM_INDEFINITE) THEN
+   SUM_GAUGE = 0._EB
+   IF (PREDICTOR) THEN
+      RHOP => RHO
+   ELSE
+      RHOP => RHOS
+   ENDIF
+   DO K=1,KBAR
+      DO J=1,JBAR
+         DO I=1,IBAR
+            IF (MUNKH(I,J,K)<=0 .OR. ZONE_MESH(PRESSURE_ZONE(I,J,K))%CONNECTED_ZONE_PARENT/=IPZ) CYCLE
+            VOL = ((1._EB-CYL_FCT)*DY(J) + CYL_FCT*RC(I))*DX(I)*DZ(K)
+            SUM_GAUGE(1) = SUM_GAUGE(1) + VOL*RHOP(I,J,K)*(KRES(I,J,K)+ZM%X_H(MUNKH(I,J,K)))
+            SUM_GAUGE(2) = SUM_GAUGE(2) + VOL*RHOP(I,J,K)
+         ENDDO
+      ENDDO
+   ENDDO
+   DO ICC=1,MESHES(NM)%N_CUTCELL_MESH
+      I = CUT_CELL(ICC)%IJK(IAXIS); J = CUT_CELL(ICC)%IJK(JAXIS); K = CUT_CELL(ICC)%IJK(KAXIS)
+      IF (CUT_CELL(ICC)%UNKH(1)<=0 .OR. ZONE_MESH(PRESSURE_ZONE(I,J,K))%CONNECTED_ZONE_PARENT/=IPZ) CYCLE
+      IF(ONE_UNKH_PER_CUTCELL) THEN
+         DO JCC=1,CUT_CELL(ICC)%NCELL
+            IF (PREDICTOR) THEN
+               RHO_CC = CUT_CELL(ICC)%RHO(JCC)
+            ELSE
+               RHO_CC = CUT_CELL(ICC)%RHOS(JCC)
+            ENDIF
+            VOL = CUT_CELL(ICC)%VOLUME(JCC)
+            KRES_CC = CUT_CELL(ICC)%KRES(JCC)
+            SUM_GAUGE(1) = SUM_GAUGE(1) + VOL*RHO_CC*(KRES_CC+ZM%X_H(CUT_CELL(ICC)%UNKH(JCC)))
+            SUM_GAUGE(2) = SUM_GAUGE(2) + VOL*RHO_CC
+         ENDDO
+      ELSE
+         DO JCC=1,CUT_CELL(ICC)%NCELL
+            IF (PREDICTOR) THEN
+               RHO_CC = CUT_CELL(ICC)%RHO(JCC)
+            ELSE
+               RHO_CC = CUT_CELL(ICC)%RHOS(JCC)
+            ENDIF
+            VOL = CUT_CELL(ICC)%VOLUME(JCC)
+            KRES_CC = CUT_CELL(ICC)%KRES(JCC)
+            SUM_GAUGE(1) = SUM_GAUGE(1) + VOL*RHO_CC*(KRES_CC+ZM%X_H(CUT_CELL(ICC)%UNKH(1)))
+            SUM_GAUGE(2) = SUM_GAUGE(2) + VOL*RHO_CC
+         ENDDO
+      ENDIF
+   ENDDO
+   SHIFT_H = SUM_GAUGE(1)/(SUM_GAUGE(2)+TWENTY_EPSILON_EB)
+   ZM%X_H = ZM%X_H - SHIFT_H
+ENDIF
 
 ! WRITE(LU_ERR,*) 'SUM_XH=',SUM(ZM%X_H),SUM(ZM%A_H(1:ZM%IA_H(ZM%NUNKH+1)))
 
@@ -3010,13 +3082,11 @@ MODULE GLOBMAT_SOLVER
 
 USE PRECISION_PARAMETERS
 USE GLOBAL_CONSTANTS
-USE MESH_VARIABLES
 USE MESH_POINTERS
-
 USE COMPLEX_GEOMETRY, ONLY : CALL_FOR_GLMAT, CC_CGSC,CC_FGSC, CC_UNKH, CC_NCVARS,         &
                              NM_START,IPARM,NNZ_ROW_H,CALL_FROM_GLMAT_SETUP
 USE CC_SCALARS, ONLY :   GET_H_CUTFACES, GET_BOUNDFACE_GEOM_INFO_H, ADD_INPLACE_NNZ_H_WHLDOM, &
-                         COPY_CC_HS_TO_UNKH, COPY_CC_UNKH_TO_HS
+                         COPY_CC_MUNKH_TO_UNKH, COPY_CC_UNKH_TO_HS
 
 #ifdef WITH_MKL
 USE MKL_CLUSTER_SPARSE_SOLVER
@@ -3037,6 +3107,7 @@ INTEGER,  PARAMETER :: IS_UNDEFINED =-11
 INTEGER,  PARAMETER :: IS_CGSC   = 1 ! Face media type: IS_GASPHASE, IS_SOLID or IS_CUTCFE.
 INTEGER,  PARAMETER :: IS_UNKH   = 2 ! H unknown number.
 INTEGER,  PARAMETER :: IS_NCVARS = 2 ! Number of face variables in MESHES(NM)%CCVAR.
+INTEGER,  PARAMETER :: IS_WALLT  = 100 ! Wall cell type.
 
 INTEGER, SAVE :: ILO_CELL,IHI_CELL,JLO_CELL,JHI_CELL,KLO_CELL,KHI_CELL
 INTEGER, SAVE :: ILO_FACE,IHI_FACE,JLO_FACE,JHI_FACE,KLO_FACE,KHI_FACE
@@ -3067,6 +3138,11 @@ END TYPE ZSL_COMM_TYPE
 TYPE(ZSL_COMM_TYPE), ALLOCATABLE, DIMENSION(:) :: ZSL_COMM
 #endif
 
+TYPE H_RESTORE_TYPE
+   REAL(EB), ALLOCATABLE, DIMENSION(:,:,:) :: H_RESTORE
+END TYPE H_RESTORE_TYPE
+TYPE(H_RESTORE_TYPE), ALLOCATABLE, DIMENSION(:), SAVE :: H_RESTORE_MESHES
+
 ! Matrix types:
 INTEGER, PARAMETER :: SYMM_INDEFINITE       =-2
 INTEGER, PARAMETER :: SYMM_POSITIVE_DEFINITE= 2
@@ -3082,11 +3158,62 @@ PUBLIC GLMAT_SOLVER_SETUP,GLMAT_SOLVER,COPY_H_OMESH_TO_MESH,FINISH_GLMAT_SOLVER,
 
 CONTAINS
 
+! --------------------------- COMPUTE_GUARD_CELL_INDEXES -----------------------
+
+PURE SUBROUTINE COMPUTE_GUARD_CELL_INDEXES(IOR_IN, IIO, JJO, KKO, II_NOM, JJ_NOM, KK_NOM)
+! Compute the guard cell location in the neighboring mesh based on orientation
+INTEGER, INTENT(IN) :: IOR_IN, IIO, JJO, KKO
+INTEGER, INTENT(OUT) :: II_NOM, JJ_NOM, KK_NOM
+
+SELECT CASE(IOR_IN)
+CASE( IAXIS); II_NOM = IIO + 1; JJ_NOM = JJO; KK_NOM = KKO
+CASE(-IAXIS); II_NOM = IIO - 1; JJ_NOM = JJO; KK_NOM = KKO
+CASE( JAXIS); II_NOM = IIO; JJ_NOM = JJO + 1; KK_NOM = KKO
+CASE(-JAXIS); II_NOM = IIO; JJ_NOM = JJO - 1; KK_NOM = KKO
+CASE( KAXIS); II_NOM = IIO; JJ_NOM = JJO; KK_NOM = KKO + 1
+CASE(-KAXIS); II_NOM = IIO; JJ_NOM = JJO; KK_NOM = KKO - 1
+END SELECT
+
+END SUBROUTINE COMPUTE_GUARD_CELL_INDEXES
+
+! --------------------------- SAVE_HS_FOR_SETUP ----------------------------------
+
+SUBROUTINE SAVE_HS_FOR_SETUP
+INTEGER :: NM
+CALL DEALLOCATE_H_RESTORE_STORAGE; ALLOCATE(H_RESTORE_MESHES(LOWER_MESH_INDEX:UPPER_MESH_INDEX))
+DO NM=LOWER_MESH_INDEX,UPPER_MESH_INDEX
+   ALLOCATE(H_RESTORE_MESHES(NM)%H_RESTORE(LBOUND(MESHES(NM)%HS,1):UBOUND(MESHES(NM)%HS,1), &
+                                           LBOUND(MESHES(NM)%HS,2):UBOUND(MESHES(NM)%HS,2), &
+                                           LBOUND(MESHES(NM)%HS,3):UBOUND(MESHES(NM)%HS,3)))
+   H_RESTORE_MESHES(NM)%H_RESTORE = MESHES(NM)%HS
+ENDDO
+END SUBROUTINE SAVE_HS_FOR_SETUP
+
+! --------------------------- RESTORE_HS_AFTER_SETUP -----------------------------
+
+SUBROUTINE RESTORE_HS_AFTER_SETUP
+INTEGER :: NM
+DO NM=LOWER_MESH_INDEX,UPPER_MESH_INDEX
+   MESHES(NM)%HS = H_RESTORE_MESHES(NM)%H_RESTORE
+ENDDO
+CALL DEALLOCATE_H_RESTORE_STORAGE
+END SUBROUTINE RESTORE_HS_AFTER_SETUP
+
+! --------------------------- DEALLOCATE_H_RESTORE_STORAGE -----------------------
+
+SUBROUTINE DEALLOCATE_H_RESTORE_STORAGE
+INTEGER :: NM
+IF (.NOT.ALLOCATED(H_RESTORE_MESHES)) RETURN
+DO NM=LBOUND(H_RESTORE_MESHES,1),UBOUND(H_RESTORE_MESHES,1)
+   IF (ALLOCATED(H_RESTORE_MESHES(NM)%H_RESTORE)) DEALLOCATE(H_RESTORE_MESHES(NM)%H_RESTORE)
+ENDDO
+DEALLOCATE(H_RESTORE_MESHES)
+END SUBROUTINE DEALLOCATE_H_RESTORE_STORAGE
+
 ! --------------------------- GLMAT_SOLVER -------------------------------------
 
 SUBROUTINE GLMAT_SOLVER(T,DT)
 
-USE MESH_POINTERS
 USE COMP_FUNCTIONS, ONLY: CURRENT_TIME
 USE CC_SCALARS, ONLY : GET_CUTCELL_HP,GET_PRES_CFACE_BCS,GET_FH_FROM_PRHS_AND_BCS
 USE MPI_F08
@@ -3101,12 +3228,12 @@ INTEGER :: MAXFCT, MNUM, NRHS, ERROR
 #ifdef WITH_MKL
 INTEGER :: PERM(1), PHASE
 #endif
-INTEGER :: NM, IW, IIG, JJG, KKG, IOR, IROW, I, J, K, ICC
+INTEGER :: NM, IW, IIG, JJG, KKG, IOR, IROW, I, J, K, ICC, JCC
 TYPE (WALL_TYPE), POINTER :: WC
 TYPE (EXTERNAL_WALL_TYPE), POINTER :: EWC
 TYPE (BOUNDARY_COORD_TYPE), POINTER :: BC
-REAL(EB), POINTER, DIMENSION(:,:,:)   :: HP
-REAL(EB) :: SUM_FH(2), SUM_XH(2), MEAN_FH, MEAN_XH
+REAL(EB), POINTER, DIMENSION(:,:,:)   :: HP,RHOP
+REAL(EB) :: SUM_FH(2), SUM_XH(2), SUM_GAUGE(2), MEAN_FH, MEAN_XH, SHIFT_H, VOL, RHO_CC, KRES_CC
 INTEGER :: IERR
 
 ! INTEGER  :: JCOL
@@ -3179,7 +3306,7 @@ IPZ_LOOP : DO IPZ=0,N_ZONE_GLOBMAT
          ENDDO
          IF (N_MPI_PROCESSES>1) CALL MPI_ALLREDUCE(MPI_IN_PLACE,SUM_FH(1),2,MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_WORLD,IERR)
          ! Compute arithmetic mean by pressure zone:
-         MEAN_FH = SUM_FH(1)/(SUM_FH(2)+TWO_EPSILON_EB)
+         MEAN_FH = SUM_FH(1)/(SUM_FH(2)+TWENTY_EPSILON_EB)
          ! Substract Mean:
          ZSL%F_H = ZSL%F_H - MEAN_FH
       ELSE WHOLE_DOM_IF1
@@ -3233,42 +3360,69 @@ IF (ERROR /= 0 .AND. MY_RANK==0) WRITE(LU_ERR,*) 'GLMAT_SOLVER: The following ER
    END SELECT LIBRARY_SELECT
 
    IF (ZSL%MTYPE==SYMM_INDEFINITE) THEN
-      SUM_XH = 0._EB; MEAN_XH = 0._EB
-      WHOLE_DOM_IF2 : IF(.NOT.PRES_ON_WHOLE_DOMAIN) THEN
-         ! Sum H by Pressure Zone:
+      IF ((.NOT.PRES_ON_WHOLE_DOMAIN .OR. N_ZONE<=1) .AND. PERIODIC_TEST/=7) THEN
+         ! In the case of periodic test 7, we don't want to apply the gauge shift assuming P_mean=0, here H_mean=0.
+         ! Apply the physical-pressure gauge directly when it is well-defined.
+         SUM_GAUGE = 0._EB
          DO NM=LOWER_MESH_INDEX,UPPER_MESH_INDEX
             CALL POINT_TO_MESH(NM)
+            IF (PREDICTOR) THEN; RHOP => RHO; ELSE; RHOP => RHOS; ENDIF
             DO K=1,KBAR
                DO J=1,JBAR
                   DO I=1,IBAR
                      IF (CCVAR(I,J,K,UNKH)<=0 .OR. ZONE_SOLVE(PRESSURE_ZONE(I,J,K))%CONNECTED_ZONE_PARENT/=IPZ) CYCLE
-                     IROW = CCVAR(I,J,K,UNKH) - ZSL%UNKH_IND(NM_START) ! Local numeration.
-                     SUM_XH(1) = SUM_XH(1) + ZSL%X_H(IROW)
-                     SUM_XH(2) = SUM_XH(2) + 1._EB
+                     IROW = CCVAR(I,J,K,UNKH) - ZSL%UNKH_IND(NM_START)
+                     VOL = ((1._EB-CYL_FCT)*DY(J) + CYL_FCT*RC(I))*DX(I)*DZ(K)
+                     SUM_GAUGE(1) = SUM_GAUGE(1) + VOL*RHOP(I,J,K)*(KRES(I,J,K)+ZSL%X_H(IROW))
+                     SUM_GAUGE(2) = SUM_GAUGE(2) + VOL*RHOP(I,J,K)
                   ENDDO
                ENDDO
             ENDDO
-            ! Add cut-cell region contribution:
             DO ICC=1,MESHES(NM)%N_CUTCELL_MESH
-               CC => CUT_CELL(ICC); I = CC%IJK(IAXIS); J = CC%IJK(JAXIS); K = CC%IJK(KAXIS)
+               I = CUT_CELL(ICC)%IJK(IAXIS); J = CUT_CELL(ICC)%IJK(JAXIS); K = CUT_CELL(ICC)%IJK(KAXIS)
                IF (ZONE_SOLVE(PRESSURE_ZONE(I,J,K))%CONNECTED_ZONE_PARENT/=IPZ) CYCLE
-               IROW      = CC%UNKH(1)- ZSL%UNKH_IND(NM_START) ! Local numeration.
-               SUM_XH(1) = SUM_XH(1) + ZSL%X_H(IROW)
-               SUM_XH(2) = SUM_XH(2) + 1._EB
+               IF(ONE_UNKH_PER_CUTCELL) THEN
+                  DO JCC=1,CUT_CELL(ICC)%NCELL
+                     IF (PREDICTOR) THEN
+                        RHO_CC = CUT_CELL(ICC)%RHO(JCC)
+                     ELSE
+                        RHO_CC = CUT_CELL(ICC)%RHOS(JCC)
+                     ENDIF
+                     IROW = CUT_CELL(ICC)%UNKH(JCC) - ZSL%UNKH_IND(NM_START)
+                     VOL = CUT_CELL(ICC)%VOLUME(JCC)
+                     KRES_CC = CUT_CELL(ICC)%KRES(JCC)
+                     SUM_GAUGE(1) = SUM_GAUGE(1) + VOL*RHO_CC*(KRES_CC+ZSL%X_H(IROW))
+                     SUM_GAUGE(2) = SUM_GAUGE(2) + VOL*RHO_CC
+                  ENDDO
+               ELSE
+                  IROW = CUT_CELL(ICC)%UNKH(1) - ZSL%UNKH_IND(NM_START)
+                  DO JCC=1,CUT_CELL(ICC)%NCELL
+                     IF (PREDICTOR) THEN
+                        RHO_CC = CUT_CELL(ICC)%RHO(JCC)
+                     ELSE
+                        RHO_CC = CUT_CELL(ICC)%RHOS(JCC)
+                     ENDIF
+                     VOL = CUT_CELL(ICC)%VOLUME(JCC)
+                     KRES_CC = CUT_CELL(ICC)%KRES(JCC)
+                     SUM_GAUGE(1) = SUM_GAUGE(1) + VOL*RHO_CC*(KRES_CC+ZSL%X_H(IROW))
+                     SUM_GAUGE(2) = SUM_GAUGE(2) + VOL*RHO_CC
+                  ENDDO
+               ENDIF
             ENDDO
          ENDDO
-         IF (N_MPI_PROCESSES>1) CALL MPI_ALLREDUCE(MPI_IN_PLACE,SUM_XH(1),2,MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_WORLD,IERR)
-         ! Compute arithmetic mean by pressure zone:
-         MEAN_XH = SUM_XH(1)/(SUM_XH(2)+TWO_EPSILON_EB)
-         ! Substract Mean:
-         ZSL%X_H = ZSL%X_H - MEAN_XH
-      ELSE WHOLE_DOM_IF2
+         IF (N_MPI_PROCESSES>1) CALL MPI_ALLREDUCE(MPI_IN_PLACE,SUM_GAUGE(1),2,MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_WORLD,IERR)
+         SHIFT_H = SUM_GAUGE(1)/(SUM_GAUGE(2)+TWENTY_EPSILON_EB)
+         ZSL%X_H = ZSL%X_H - SHIFT_H
+      ELSE
+         ! Fall back to an algebraic zero-mean representative when no physical gauge is applied. 
+         ! Applies to periodic test 7.
+         SUM_XH = 0._EB; MEAN_XH = 0._EB
          SUM_XH(1) = SUM(ZSL%X_H(1:ZSL%NUNKH_LOCAL))
          IF (N_MPI_PROCESSES>1) CALL MPI_ALLREDUCE(SUM_XH(1),SUM_XH(2),1,MPI_DOUBLE_PRECISION,MPI_SUM,MPI_COMM_WORLD,IERR)
          MEAN_XH = SUM_XH(2)/REAL(ZSL%NUNKH_TOTAL,EB)
          ! Substract Mean:
          ZSL%X_H = ZSL%X_H - MEAN_XH
-      ENDIF WHOLE_DOM_IF2
+      ENDIF
    ENDIF
    ! WRITE(LU_ERR,*) 'SUM_XH=',SUM(X_H),SUM(A_H(1:IA_H(NUNKH_LOCAL+1)))
 
@@ -3380,6 +3534,11 @@ INTEGER, INTENT(IN) :: STAGE_FLAG
 
 ! Local Variables:
 LOGICAL :: SUPPORTED_MESH=.TRUE.
+LOGICAL :: FINE_INTERPOLATED_FLG, FINE_SOLID_FLG
+INTEGER :: NM,IW,IIO,JJO,KKO,II_NOM,JJ_NOM,KK_NOM
+TYPE(WALL_TYPE), POINTER :: WC
+TYPE(BOUNDARY_COORD_TYPE), POINTER :: BC
+TYPE(EXTERNAL_WALL_TYPE), POINTER :: EWC
 
 IF (FREEZE_VELOCITY)  RETURN ! Fixed velocity soln. i.e. PERIODIC_TEST=102 => FREEZE_VELOCITY=.TRUE.
 IF (SOLID_PHASE_ONLY) RETURN
@@ -3400,20 +3559,108 @@ N_ZONE_GLOBMAT = N_ZONE
 IF(PRES_ON_WHOLE_DOMAIN) N_ZONE_GLOBMAT = 0
 
 SELECT CASE(STAGE_FLAG)
+CASE(-1) ! Initialization of EWC_TYPE array:
+
+   CALL_FROM_GLMAT_SETUP = .TRUE.
+
+   ! Factor to drop DY(J) in cylindrical coordinates. Soln assumes DTheta=1.
+   CYL_FCT = 0._EB; IF (CYLINDRICAL) CYL_FCT = 1._EB
+
+  ! Check for unsupported mesh configurations:
+  CALL CHECK_UNSUPPORTED_MESH(SUPPORTED_MESH)
+  IF (.NOT.SUPPORTED_MESH) RETURN
+
+  ITERATE_PRESSURE = .TRUE.  ! Although there is no need to do pressure iterations to drive down velocity error
+                             ! on wall cells (i.e. the solution should give the right unique dH/dxn), leave it
+                             ! .TRUE. to write out velocity error diagnostics.
+
+  ! Preserve the physical HS field before using it as setup scratch storage.
+  CALL SAVE_HS_FOR_SETUP
+
+  ! Copy external wall cells types to HS:
+  CALL COPY_CCVAR_IN_HS(IS_WALLT)
+
+CASE(0)
+   ! Copy external wall cells types from HS to OMESH%EWC_TYPE:
+   CALL COPY_HS_IN_CCVAR(IS_WALLT)
+
+   ! Here the INTERPOLATED coarse side faces note if at least one fine face is INTERPOLATED and one SOLID, set to SOLID.
+   MESH_LOOP_1: DO NM=LOWER_MESH_INDEX,UPPER_MESH_INDEX
+   CALL POINT_TO_MESH(NM)
+   DO IW=1,N_EXTERNAL_WALL_CELLS
+      WC => WALL(IW)
+      BC => BOUNDARY_COORD(WC%BC_INDEX)
+      EWC => EXTERNAL_WALL(IW)
+      IF(WC%BOUNDARY_TYPE==INTERPOLATED_BOUNDARY .AND. EWC%NOM > 0 .AND. EWC%AREA_RATIO>0.9_EB) THEN
+         IF(ALLOCATED(OMESH(EWC%NOM)%EWC_TYPE)) THEN
+            ! Only coarse mesh side checked for one INTERPOLATED fine side face and one SOLID fine side face
+            FINE_INTERPOLATED_FLG = .FALSE.
+            FINE_SOLID_FLG = .FALSE.
+            DO KKO = EWC%KKO_MIN, EWC%KKO_MAX
+               DO JJO = EWC%JJO_MIN, EWC%JJO_MAX
+                  DO IIO = EWC%IIO_MIN, EWC%IIO_MAX
+                     ! Compute guard cell location in neighboring mesh
+                     CALL COMPUTE_GUARD_CELL_INDEXES(BC%IOR, IIO, JJO, KKO, II_NOM, JJ_NOM, KK_NOM)
+                     IF(OMESH(EWC%NOM)%EWC_TYPE(II_NOM,JJ_NOM,KK_NOM) == INTERPOLATED_BOUNDARY) THEN
+                        FINE_INTERPOLATED_FLG = .TRUE.
+                     ELSE
+                        FINE_SOLID_FLG = .TRUE.
+                     ENDIF
+                  ENDDO
+               ENDDO
+            ENDDO
+            IF(FINE_INTERPOLATED_FLG .AND. FINE_SOLID_FLG) WC%BOUNDARY_TYPE = SOLID_BOUNDARY
+         ENDIF
+      ENDIF
+   ENDDO
+   ENDDO MESH_LOOP_1
+
+   ! Copy external wall cells types to HS:
+   CALL COPY_CCVAR_IN_HS(IS_WALLT)
+
 CASE(1)
 
-    CALL_FROM_GLMAT_SETUP = .TRUE.
+   ! Copy external wall cells types from HS to OMESH%EWC_TYPE:
+   CALL COPY_HS_IN_CCVAR(IS_WALLT)
 
-    ! Factor to drop DY(J) in cylindrical coordinates. Soln assumes DTheta=1.
-    CYL_FCT = 0._EB; IF (CYLINDRICAL) CYL_FCT = 1._EB
-
-   ! Check for unsupported mesh configurations:
-   CALL CHECK_UNSUPPORTED_MESH(SUPPORTED_MESH)
-   IF (.NOT.SUPPORTED_MESH) RETURN
-
-   ITERATE_PRESSURE = .TRUE.  ! Although there is no need to do pressure iterations to drive down velocity error
-                              ! on wall cells (i.e. the solution should give the right unique dH/dxn), leave it
-                              ! .TRUE. to write out velocity error diagnostics.
+   ! Here for INTERPOLATED fine side faces note if coarse side face is SOLID, if so set their type to SOLID
+   MESH_LOOP_2: DO NM=LOWER_MESH_INDEX,UPPER_MESH_INDEX
+      CALL POINT_TO_MESH(NM)
+      DO IW=1,N_EXTERNAL_WALL_CELLS
+         WC => WALL(IW)
+         BC => BOUNDARY_COORD(WC%BC_INDEX)
+         EWC => EXTERNAL_WALL(IW)
+         IF(WC%BOUNDARY_TYPE==SOLID_BOUNDARY .AND. EWC%NOM > 0) THEN
+            IF(ALLOCATED(OMESH(EWC%NOM)%EWC_TYPE) .AND. EWC%AREA_RATIO>0.9_EB) THEN
+               ! SOLID coarse face looks for INTERPOLATED fine side faces, if found sets EWC_TYPE to SOLID.
+               DO KKO = EWC%KKO_MIN, EWC%KKO_MAX
+                  DO JJO = EWC%JJO_MIN, EWC%JJO_MAX
+                     DO IIO = EWC%IIO_MIN, EWC%IIO_MAX
+                        ! Compute guard cell location in neighboring mesh
+                        CALL COMPUTE_GUARD_CELL_INDEXES(BC%IOR, IIO, JJO, KKO, II_NOM, JJ_NOM, KK_NOM)
+                        IF(OMESH(EWC%NOM)%EWC_TYPE(II_NOM,JJ_NOM,KK_NOM) == INTERPOLATED_BOUNDARY) &
+                           OMESH(EWC%NOM)%EWC_TYPE(II_NOM,JJ_NOM,KK_NOM) = SOLID_BOUNDARY
+                     ENDDO
+                  ENDDO
+               ENDDO
+            ENDIF
+         ELSEIF(WC%BOUNDARY_TYPE==INTERPOLATED_BOUNDARY) THEN
+            IF(ALLOCATED(OMESH(EWC%NOM)%EWC_TYPE) .AND. EWC%AREA_RATIO<0.9_EB) THEN 
+               ! Only fine mesh side checked for SOLID_BOUNDARY coarse side faces.
+               DO KKO = EWC%KKO_MIN, EWC%KKO_MAX
+                  DO JJO = EWC%JJO_MIN, EWC%JJO_MAX
+                     DO IIO = EWC%IIO_MIN, EWC%IIO_MAX
+                        ! Compute guard cell location in neighboring mesh
+                        CALL COMPUTE_GUARD_CELL_INDEXES(BC%IOR, IIO, JJO, KKO, II_NOM, JJ_NOM, KK_NOM)
+                        IF(OMESH(EWC%NOM)%EWC_TYPE(II_NOM,JJ_NOM,KK_NOM) == SOLID_BOUNDARY) &
+                           WC%BOUNDARY_TYPE = SOLID_BOUNDARY
+                     ENDDO
+                  ENDDO
+               ENDDO
+            ENDIF
+         ENDIF
+      ENDDO
+   ENDDO MESH_LOOP_2
 
    ! Test for CC_IBM, define CGSC and UNKH locations in CCVAR:
    IF (CC_IBM) THEN
@@ -3446,6 +3693,9 @@ CASE(3)
 
    ! Dump back to CCVAR UNKH values from HS.
    CALL COPY_HS_IN_CCVAR(UNKH)
+
+   ! Restore the physical HS field after the UNKH exchange has consumed the HS scratch data.
+   CALL RESTORE_HS_AFTER_SETUP
 
    ! 2. For each GASPHASE (cut or regular) face, find global numeration of the volumes
    ! that share it, store a list of areas and centroids for diffussion operator in FV form.
@@ -3490,14 +3740,10 @@ END SUBROUTINE GLMAT_SOLVER_SETUP
 SUBROUTINE CHECK_UNSUPPORTED_MESH(SUPPORTED_MESH)
 
 USE MPI_F08
-USE MESH_POINTERS
-USE GLOBAL_CONSTANTS, ONLY : N_MPI_PROCESSES
-USE TRAN, ONLY : TRANS
 
 LOGICAL, INTENT(OUT) :: SUPPORTED_MESH
 
-INTEGER :: NM,TRN_ME(2),IERR
-REAL(EB):: DX_P(IAXIS:KAXIS),MIN_XS(3),MAX_XF(3),LX,LY,LZ
+INTEGER :: NM,IERR
 INTEGER :: COUNT
 INTEGER, ALLOCATABLE, DIMENSION(:,:) :: MESH_GRAPH,DSETS
 LOGICAL, ALLOCATABLE, DIMENSION(:)   :: COUNTED
@@ -3509,64 +3755,9 @@ INTEGER :: NOM,IW,NMLOC,NSETS,ISET,PIVOT,PIVOT_LOC,MESHES_LEFT,CTMSH_LO,CTMSH_HI
 
 SUPPORTED_MESH = .TRUE.
 
-! 1. Stretched grids which is untested:
-GLMAT_IF_1 : IF(PRES_FLAG==GLMAT_FLAG) THEN
-TRN_ME(1:2) = 0
-MESH_LOOP_TRN : DO NM=LOWER_MESH_INDEX,UPPER_MESH_INDEX
-   TRN_ME(1) = TRN_ME(1) + TRANS(NM)%NOCMAX
-ENDDO MESH_LOOP_TRN
-TRN_ME(2)=TRN_ME(1)
-IF (N_MPI_PROCESSES > 1) CALL MPI_ALLREDUCE(TRN_ME(1),TRN_ME(2),1,MPI_INTEGER,MPI_SUM,MPI_COMM_WORLD,IERR)
-IF (TRN_ME(2) > 0) THEN ! There is a TRNX, TRNY or TRNZ line defined for stretched grids. Not Unsupported.
-   IF (MY_RANK == 0) WRITE(LU_ERR,*) 'GLMAT Setup Error : Stretched grids currently unsupported.'
-   SUPPORTED_MESH = .FALSE.
-   STOP_STATUS = SETUP_STOP
-   RETURN
-ENDIF
-ENDIF GLMAT_IF_1
-
 IF (NMESHES == 1) RETURN
 
-! 2. Two different cell sizes in mesh (i.e. different refinement levels):
-NM = 1
-IF (MY_RANK==PROCESS(NM)) THEN
-   CALL POINT_TO_MESH(NM)
-   DX_P(IAXIS) = DX(1)
-   DX_P(JAXIS) = DY(1)
-   DX_P(KAXIS) = DZ(1)
-ENDIF
-IF (N_MPI_PROCESSES > 1) CALL MPI_BCAST(DX_P(1),3,MPI_DOUBLE_PRECISION,PROCESS(NM),MPI_COMM_WORLD,IERR)
-! Find domain sizes to define relative epsilon:
-MIN_XS(1:3) = (/ MESHES(NM)%XS, MESHES(NM)%YS, MESHES(NM)%ZS /)
-MAX_XF(1:3) = (/ MESHES(NM)%XF, MESHES(NM)%YF, MESHES(NM)%ZF /)
-DO NM=2,NMESHES
-   MIN_XS(1) = MIN(MIN_XS(1),MESHES(NM)%XS)
-   MIN_XS(2) = MIN(MIN_XS(2),MESHES(NM)%YS)
-   MIN_XS(3) = MIN(MIN_XS(3),MESHES(NM)%ZS)
-   MAX_XF(1) = MAX(MAX_XF(1),MESHES(NM)%XF)
-   MAX_XF(2) = MAX(MAX_XF(2),MESHES(NM)%YF)
-   MAX_XF(3) = MAX(MAX_XF(3),MESHES(NM)%ZF)
-ENDDO
-LX = MAX(MAX_XF(1)-MIN_XS(1),1._EB)
-LY = MAX(MAX_XF(2)-MIN_XS(2),1._EB)
-LZ = MAX(MAX_XF(3)-MIN_XS(3),1._EB)
-TRN_ME(1:2) = 0
-MESH_LOOP_CELL : DO NM=LOWER_MESH_INDEX,UPPER_MESH_INDEX
-   CALL POINT_TO_MESH(NM)
-   IF(ABS(DX_P(IAXIS)-DX(1)) > 10._EB*TWO_EPSILON_EB*LX) TRN_ME(1) = TRN_ME(1) + 1
-   IF(ABS(DX_P(JAXIS)-DY(1)) > 10._EB*TWO_EPSILON_EB*LY) TRN_ME(1) = TRN_ME(1) + 1
-   IF(ABS(DX_P(KAXIS)-DZ(1)) > 10._EB*TWO_EPSILON_EB*LZ) TRN_ME(1) = TRN_ME(1) + 1
-ENDDO MESH_LOOP_CELL
-TRN_ME(2)=TRN_ME(1)
-IF (N_MPI_PROCESSES > 1) CALL MPI_ALLREDUCE(TRN_ME(1),TRN_ME(2),1,MPI_INTEGER,MPI_SUM,MPI_COMM_WORLD,IERR)
-IF (TRN_ME(2) > 0) THEN ! Meshes at different refinement levels. Not Unsupported.
-   IF (MY_RANK == 0) WRITE(LU_ERR,*) 'GLMAT Setup Error : Meshes at different refinement levels unsupported.'
-   SUPPORTED_MESH = .FALSE.
-   STOP_STATUS = SETUP_STOP
-   RETURN
-ENDIF
-
-! 3. Two (or more) disjoint domains, where at least one has all Neumann BCs and one has some Dirichlet bcs.
+! Two (or more) disjoint domains, where at least one has all Neumann BCs and one has some Dirichlet bcs.
 ! This is a topological problem that would require different Matrix types (i.e. one positive definite and one
 ! indefinite), which would require separate solutions.
 ! A possible approach to look at is to solve the whole system as indefinite, and then substract a constant in
@@ -3692,12 +3883,13 @@ SUBROUTINE COPY_H_OMESH_TO_MESH
 USE COMP_FUNCTIONS, ONLY: CURRENT_TIME
 USE CC_SCALARS, ONLY: GET_H_GUARD_CUTCELL
 ! Local Variables:
-INTEGER  :: NM,NOM,II,JJ,KK,IOR,IW,IIO,JJO,KKO
+INTEGER  :: NM,NOM,II,JJ,KK,IOR,IW,IIO,JJO,KKO,IIG,JJG,KKG,II_NOM,JJ_NOM,KK_NOM
 TYPE (OMESH_TYPE), POINTER :: OM
 TYPE (WALL_TYPE), POINTER :: WC
 TYPE (BOUNDARY_COORD_TYPE), POINTER :: BC
 TYPE (EXTERNAL_WALL_TYPE), POINTER :: EWC
 LOGICAL :: FLG
+REAL(EB) :: H_EXTERNAL_MEAN, DX_INT, DX_EXT, WEIGHT_INT, WEIGHT_EXT, NCELLS_EXT, H_FACE
 
 IF (CC_IBM) CALL_FOR_GLMAT = .FALSE.
 
@@ -3710,8 +3902,6 @@ PREDCORR_LOOP : IF (PREDICTOR) THEN
    MESH_LOOP_1 : DO NM=LOWER_MESH_INDEX,UPPER_MESH_INDEX
 
       CALL POINT_TO_MESH(NM)
-
-      ! Loop over all cell edges
 
       EXTERNAL_WALL_LOOP_1 : DO IW=1,N_EXTERNAL_WALL_CELLS
 
@@ -3729,34 +3919,61 @@ PREDCORR_LOOP : IF (PREDICTOR) THEN
             IF (WC%BOUNDARY_TYPE/=INTERPOLATED_BOUNDARY) CYCLE EXTERNAL_WALL_LOOP_1
          ENDIF
 
-         II  = BC%II
-         JJ  = BC%JJ
-         KK  = BC%KK
-         IOR = BC%IOR
-         NOM = EWC%NOM
+         II  = BC%II;  JJ  = BC%JJ;  KK  = BC%KK
+         IIG = BC%IIG; JJG = BC%JJG; KKG = BC%KKG
+         IOR = BC%IOR; NOM = EWC%NOM; IF(NOM < 1) CYCLE
+
          ! Here if NOM==0 means it is an OBST laying on an external boundary -> CYCLE
-         IF(NOM < 1) CYCLE
          OM => OMESH(NOM)
 
-         ! This assumes all meshes at the same level of refinement:
-         KKO=EWC%KKO_MIN
-         JJO=EWC%JJO_MIN
-         IIO=EWC%IIO_MIN
+         ! Skip faces connected to cut-cells or solid - handled by GET_H_GUARD_CUTCELL
+         IF (CC_IBM) THEN
+            IF (ANY( (/CCVAR(IIG,JJG,KKG,CC_CGSC),CCVAR(II,JJ,KK,CC_CGSC)/) /= IS_GASPHASE )) CYCLE EXTERNAL_WALL_LOOP_1
+         ENDIF
 
+         ! GRID REFINEMENT: Compute mean H accounting for boundary types
+         H_EXTERNAL_MEAN = 0._EB
+         NCELLS_EXT = 0._EB
+         DO KKO = EWC%KKO_MIN, EWC%KKO_MAX
+            DO JJO = EWC%JJO_MIN, EWC%JJO_MAX
+               DO IIO = EWC%IIO_MIN, EWC%IIO_MAX
+                  IF(.NOT.PRES_ON_WHOLE_DOMAIN .AND. OM%MUNKH(IIO,JJO,KKO) <= 0) CYCLE
+                  
+                  ! Compute guard cell location in neighboring mesh based on IOR
+                  CALL COMPUTE_GUARD_CELL_INDEXES(IOR, IIO, JJO, KKO, II_NOM, JJ_NOM, KK_NOM)
+                  
+                  ! Check boundary type and use appropriate value
+                  IF (OM%EWC_TYPE(II_NOM,JJ_NOM,KK_NOM) == INTERPOLATED_BOUNDARY) THEN
+                     ! Use actual external cell value (gradient continuity)
+                     H_EXTERNAL_MEAN = H_EXTERNAL_MEAN + OM%H(IIO,JJO,KKO)
+                  ELSE
+                     ! Use internal cell value (zero gradient assumption)
+                     H_EXTERNAL_MEAN = H_EXTERNAL_MEAN + H(IIG,JJG,KKG)
+                  ENDIF
+                  NCELLS_EXT = NCELLS_EXT + 1._EB
+               ENDDO
+            ENDDO
+         ENDDO
+         H_EXTERNAL_MEAN = H_EXTERNAL_MEAN / NCELLS_EXT
+         
+         ! Get cell sizes for distance-weighted interpolation
          SELECT CASE(IOR)
-         CASE( IAXIS)
-            H(II,JJ,KK) = OM%H(IIO,JJO,KKO)
-         CASE(-IAXIS)
-            H(II,JJ,KK) = OM%H(IIO,JJO,KKO)
-         CASE( JAXIS)
-            H(II,JJ,KK) = OM%H(IIO,JJO,KKO)
-         CASE(-JAXIS)
-            H(II,JJ,KK) = OM%H(IIO,JJO,KKO)
-         CASE( KAXIS)
-            H(II,JJ,KK) = OM%H(IIO,JJO,KKO)
-         CASE(-KAXIS)
-            H(II,JJ,KK) = OM%H(IIO,JJO,KKO)
+         CASE( IAXIS,-IAXIS)
+            DX_INT = DX(IIG)
+            DX_EXT = MESHES(NOM)%DX(EWC%IIO_MIN)
+         CASE( JAXIS,-JAXIS)
+            DX_INT = DY(JJG)
+            DX_EXT = MESHES(NOM)%DY(EWC%JJO_MIN)
+         CASE( KAXIS,-KAXIS)
+            DX_INT = DZ(KKG)
+            DX_EXT = MESHES(NOM)%DZ(EWC%KKO_MIN)
          END SELECT
+         
+         ! Distance-weighted interpolation at face, then extrapolation to guard cell center
+         WEIGHT_EXT = DX_INT / (DX_INT + DX_EXT)
+         WEIGHT_INT = DX_EXT / (DX_INT + DX_EXT)
+         H_FACE = WEIGHT_INT * H(IIG,JJG,KKG) + WEIGHT_EXT * H_EXTERNAL_MEAN
+         H(II,JJ,KK) = H(IIG,JJG,KKG) + 2.0_EB * (H_FACE - H(IIG,JJG,KKG))
 
       ENDDO EXTERNAL_WALL_LOOP_1
 
@@ -3788,34 +4005,60 @@ ELSE ! PREDCORR_LOOP
             IF (WC%BOUNDARY_TYPE/=INTERPOLATED_BOUNDARY) CYCLE EXTERNAL_WALL_LOOP_2
          ENDIF
 
-         II  = BC%II
-         JJ  = BC%JJ
-         KK  = BC%KK
-         IOR = BC%IOR
-         NOM = EWC%NOM
+         II  = BC%II;  JJ  = BC%JJ;  KK  = BC%KK
+         IIG = BC%IIG; JJG = BC%JJG; KKG = BC%KKG
+         IOR = BC%IOR; NOM = EWC%NOM; IF(NOM < 1) CYCLE
          ! Here if NOM==0 means it is an OBST laying on an external boundary -> CYCLE
-         IF(NOM < 1) CYCLE
          OM => OMESH(NOM)
 
-         ! This assumes all meshes at the same level of refinement:
-         KKO=EWC%KKO_MIN
-         JJO=EWC%JJO_MIN
-         IIO=EWC%IIO_MIN
+         ! Skip faces connected to cut-cells or solid - handled by GET_H_GUARD_CUTCELL
+         IF (CC_IBM) THEN
+            IF (ANY( (/CCVAR(IIG,JJG,KKG,CC_CGSC),CCVAR(II,JJ,KK,CC_CGSC)/) /= IS_GASPHASE )) CYCLE EXTERNAL_WALL_LOOP_2
+         ENDIF
 
+         ! GRID REFINEMENT: Compute mean HS accounting for boundary types
+         H_EXTERNAL_MEAN = 0._EB
+         NCELLS_EXT = 0._EB
+         DO KKO = EWC%KKO_MIN, EWC%KKO_MAX
+            DO JJO = EWC%JJO_MIN, EWC%JJO_MAX
+               DO IIO = EWC%IIO_MIN, EWC%IIO_MAX
+                  IF(.NOT.PRES_ON_WHOLE_DOMAIN .AND. OM%MUNKH(IIO,JJO,KKO) <= 0) CYCLE
+                  
+                  ! Compute guard cell location in neighboring mesh based on IOR
+                  CALL COMPUTE_GUARD_CELL_INDEXES(IOR, IIO, JJO, KKO, II_NOM, JJ_NOM, KK_NOM)
+                  
+                  ! Check boundary type and use appropriate value
+                  IF (OM%EWC_TYPE(II_NOM,JJ_NOM,KK_NOM) == INTERPOLATED_BOUNDARY) THEN
+                     ! Use actual external cell value (gradient continuity)
+                     H_EXTERNAL_MEAN = H_EXTERNAL_MEAN + OM%HS(IIO,JJO,KKO)
+                  ELSE
+                     ! Use internal cell value (zero gradient assumption)
+                     H_EXTERNAL_MEAN = H_EXTERNAL_MEAN + HS(IIG,JJG,KKG)
+                  ENDIF
+                  NCELLS_EXT = NCELLS_EXT + 1._EB
+               ENDDO
+            ENDDO
+         ENDDO
+         H_EXTERNAL_MEAN = H_EXTERNAL_MEAN / NCELLS_EXT
+         
+         ! Get cell sizes for distance-weighted interpolation
          SELECT CASE(IOR)
-         CASE( IAXIS)
-            HS(II,JJ,KK) = OM%HS(IIO,JJO,KKO)
-         CASE(-IAXIS)
-            HS(II,JJ,KK) = OM%HS(IIO,JJO,KKO)
-         CASE( JAXIS)
-            HS(II,JJ,KK) = OM%HS(IIO,JJO,KKO)
-         CASE(-JAXIS)
-            HS(II,JJ,KK) = OM%HS(IIO,JJO,KKO)
-         CASE( KAXIS)
-            HS(II,JJ,KK) = OM%HS(IIO,JJO,KKO)
-         CASE(-KAXIS)
-            HS(II,JJ,KK) = OM%HS(IIO,JJO,KKO)
+         CASE( IAXIS,-IAXIS)
+            DX_INT = DX(IIG)
+            DX_EXT = MESHES(NOM)%DX(EWC%IIO_MIN)
+         CASE( JAXIS,-JAXIS)
+            DX_INT = DY(JJG)
+            DX_EXT = MESHES(NOM)%DY(EWC%JJO_MIN)
+         CASE( KAXIS,-KAXIS)
+            DX_INT = DZ(KKG)
+            DX_EXT = MESHES(NOM)%DZ(EWC%KKO_MIN)
          END SELECT
+         
+         ! Distance-weighted interpolation at face, then extrapolation to guard cell center
+         WEIGHT_EXT = DX_INT / (DX_INT + DX_EXT)
+         WEIGHT_INT = DX_EXT / (DX_INT + DX_EXT)
+         H_FACE = WEIGHT_INT * HS(IIG,JJG,KKG) + WEIGHT_EXT * H_EXTERNAL_MEAN
+         HS(II,JJ,KK) = HS(IIG,JJG,KKG) + 2.0_EB * (H_FACE - HS(IIG,JJG,KKG))
 
       ENDDO EXTERNAL_WALL_LOOP_2
 
@@ -3833,91 +4076,156 @@ END SUBROUTINE COPY_H_OMESH_TO_MESH
 
 SUBROUTINE COPY_HS_IN_CCVAR(VAR_CC)
 
-USE MESH_POINTERS
 INTEGER, INTENT(IN) :: VAR_CC
+INTEGER  :: NM,NOM
+LOGICAL, PARAMETER :: WRITE_EWC_TYPE = .FALSE.
 
-! Local Variables:
-INTEGER  :: NM,NOM,II,JJ,KK,IOR,IW,IIO,JJO,KKO
-TYPE (OMESH_TYPE), POINTER :: OM
-TYPE (WALL_TYPE), POINTER :: WC
-TYPE (BOUNDARY_COORD_TYPE), POINTER :: BC
-TYPE (EXTERNAL_WALL_TYPE), POINTER :: EWC
-LOGICAL :: FLG
-
-MESH_LOOP : DO NM=LOWER_MESH_INDEX,UPPER_MESH_INDEX
-
+! GRID REFINEMENT: Allocate OMESH arrays for GSCH, MUNKH, and EWC_TYPE if needed
+DO NM=LOWER_MESH_INDEX,UPPER_MESH_INDEX
    CALL POINT_TO_MESH(NM)
+   DO NOM=1,NMESHES
+      IF (.NOT.ALLOCATED(OMESH(NOM)%HS)) CYCLE
+      
+      ! Allocate GSCH if not already allocated (same bounds as HS):
+      IF (VAR_CC==CGSC .AND. .NOT.ALLOCATED(OMESH(NOM)%GSCH)) THEN
+         ALLOCATE(OMESH(NOM)%GSCH(LBOUND(OMESH(NOM)%HS,1):UBOUND(OMESH(NOM)%HS,1), &
+                                  LBOUND(OMESH(NOM)%HS,2):UBOUND(OMESH(NOM)%HS,2), &
+                                  LBOUND(OMESH(NOM)%HS,3):UBOUND(OMESH(NOM)%HS,3)))
+      ENDIF
+      
+      ! Allocate MUNKH if not already allocated (same bounds as HS):
+      IF (VAR_CC==UNKH .AND. .NOT.ALLOCATED(OMESH(NOM)%MUNKH)) THEN
+         ALLOCATE(OMESH(NOM)%MUNKH(LBOUND(OMESH(NOM)%HS,1):UBOUND(OMESH(NOM)%HS,1), &
+                                   LBOUND(OMESH(NOM)%HS,2):UBOUND(OMESH(NOM)%HS,2), &
+                                   LBOUND(OMESH(NOM)%HS,3):UBOUND(OMESH(NOM)%HS,3)))
+      ENDIF
+      
+      ! Allocate EWC_TYPE if not already allocated (same bounds as HS):
+      IF (VAR_CC==IS_WALLT .AND. .NOT.ALLOCATED(OMESH(NOM)%EWC_TYPE)) THEN
+         ALLOCATE(OMESH(NOM)%EWC_TYPE(LBOUND(OMESH(NOM)%HS,1):UBOUND(OMESH(NOM)%HS,1), &
+                                      LBOUND(OMESH(NOM)%HS,2):UBOUND(OMESH(NOM)%HS,2), &
+                                      LBOUND(OMESH(NOM)%HS,3):UBOUND(OMESH(NOM)%HS,3)))
+      ENDIF
+      
+      ! Copy HS data to appropriate OMESH array:
+      IF (VAR_CC==CGSC .AND. ALLOCATED(OMESH(NOM)%GSCH)) THEN
+         OMESH(NOM)%GSCH(:,:,:) = INT(OMESH(NOM)%HS(:,:,:))
+      ELSEIF (VAR_CC==UNKH .AND. ALLOCATED(OMESH(NOM)%MUNKH)) THEN
+         OMESH(NOM)%MUNKH(:,:,:) = INT(OMESH(NOM)%HS(:,:,:))
+      ELSEIF (VAR_CC==IS_WALLT .AND. ALLOCATED(OMESH(NOM)%EWC_TYPE)) THEN
+         OMESH(NOM)%EWC_TYPE(:,:,:) = INT(OMESH(NOM)%HS(:,:,:))
+      ENDIF
+   ENDDO
+ENDDO
 
-   !
-   IF (CC_IBM .AND. VAR_CC==UNKH) THEN
+! GRID REFINEMENT: Handle CC_IBM case if needed
+IF (CC_IBM .AND. VAR_CC==UNKH) THEN
+   DO NM=LOWER_MESH_INDEX,UPPER_MESH_INDEX
+      CALL POINT_TO_MESH(NM)
+      CALL COPY_CC_MUNKH_TO_UNKH
+   ENDDO
+ENDIF
 
-      CALL COPY_CC_HS_TO_UNKH(NM)
+! Zero out HS after using it
+IF (VAR_CC == UNKH) THEN
+   DO NM=LOWER_MESH_INDEX,UPPER_MESH_INDEX
+      CALL POINT_TO_MESH(NM)
+      HS(:,:,:) = 0._EB
+   ENDDO
+ENDIF
 
-   ELSE
-
-      ! Loop over external wall cells:
-      EXTERNAL_WALL_LOOP: DO IW=1,N_EXTERNAL_WALL_CELLS
-
-         WC=>WALL(IW)
-         BC=>BOUNDARY_COORD(WC%BC_INDEX)
-         EWC=>EXTERNAL_WALL(IW)
-         IF (PRES_ON_WHOLE_DOMAIN) THEN
-            ! Matrix connectivities kept in cases of BOUNDARY_TYPE=INTERPOLATED_BOUNDARY, NULL_BOUNDARY, or
-            ! SOLID_BOUNDARY where there is an OMESH, case of OBSTS right in the boundary of meshes.
-            FLG = WC%BOUNDARY_TYPE==INTERPOLATED_BOUNDARY .OR. WC%BOUNDARY_TYPE==NULL_BOUNDARY
-            FLG = FLG .OR. (WC%BOUNDARY_TYPE==SOLID_BOUNDARY .AND. EWC%NOM > 0)
-            IF (.NOT.FLG) CYCLE EXTERNAL_WALL_LOOP
-         ELSE
-            ! Case of solving for H only on the gas phase, connectivity kept only for INTERPOLATED_BOUNDARY.
-            IF (WC%BOUNDARY_TYPE/=INTERPOLATED_BOUNDARY) CYCLE EXTERNAL_WALL_LOOP
-         ENDIF
-
-         II  = BC%II
-         JJ  = BC%JJ
-         KK  = BC%KK
-         IOR = BC%IOR
-         NOM = EWC%NOM
-         ! Here if NOM==0 means it is an OBST laying on an external boundary -> CYCLE
-         IF(NOM < 1) CYCLE EXTERNAL_WALL_LOOP
-         OM => OMESH(NOM)
-
-         ! This assumes all meshes at the same level of refinement:
-         KKO=EWC%KKO_MIN
-         JJO=EWC%JJO_MIN
-         IIO=EWC%IIO_MIN
-
-         CCVAR(II,JJ,KK,VAR_CC) = INT(OM%HS(IIO,JJO,KKO))
-
-      ENDDO EXTERNAL_WALL_LOOP
-
-   ENDIF
-
-   IF (VAR_CC == UNKH) THEN
-      HS(:,:,:)    = 0._EB
-   ENDIF
-
-ENDDO MESH_LOOP
+! DIAGNOSTIC: Write out OMESH%EWC_TYPE for external wall cells
+IF (WRITE_EWC_TYPE .AND. VAR_CC == IS_WALLT) CALL WRITE_EWC_TYPE_DIAGNOSTIC
 
 RETURN
 END SUBROUTINE COPY_HS_IN_CCVAR
 
+! --------------------------- WRITE_EWC_TYPE_DIAGNOSTIC -----------------------------
+
+SUBROUTINE WRITE_EWC_TYPE_DIAGNOSTIC
+
+INTEGER  :: NM,NOM,IW,IIG,JJG,KKG,IOR,IIO,JJO,KKO,BNDRY_TYPE,II_NOM,JJ_NOM,KK_NOM
+TYPE(WALL_TYPE), POINTER :: WC
+TYPE(BOUNDARY_COORD_TYPE), POINTER :: BC
+TYPE(EXTERNAL_WALL_TYPE), POINTER :: EWC
+
+DO NM=LOWER_MESH_INDEX,UPPER_MESH_INDEX
+   CALL POINT_TO_MESH(NM)
+   
+   EXTERNAL_WALL_LOOP_DIAG: DO IW=1,N_EXTERNAL_WALL_CELLS
+      WC => WALL(IW)
+      BC => BOUNDARY_COORD(WC%BC_INDEX)
+      EWC => EXTERNAL_WALL(IW)
+      
+      ! Skip if no neighboring mesh
+      NOM = EWC%NOM; IF (NOM < 1) CYCLE
+      
+      ! Get internal cell indices
+      IIG = BC%IIG; JJG = BC%JJG; KKG = BC%KKG
+      IOR = BC%IOR
+      
+      ! Check if OMESH%EWC_TYPE is allocated
+      IF (.NOT.ALLOCATED(OMESH(NOM)%EWC_TYPE)) THEN
+         WRITE(0,*) 'WARNING: MESH',NM,'IW=',IW,'OMESH(',NOM,')%EWC_TYPE NOT ALLOCATED'
+         CYCLE
+      ENDIF
+      
+      ! Loop over all external cells in neighboring mesh
+      DO KKO = EWC%KKO_MIN, EWC%KKO_MAX
+         DO JJO = EWC%JJO_MIN, EWC%JJO_MAX
+            DO IIO = EWC%IIO_MIN, EWC%IIO_MAX
+               
+               ! Compute guard cell location in neighboring mesh based on IOR
+               CALL COMPUTE_GUARD_CELL_INDEXES(IOR, IIO, JJO, KKO, II_NOM, JJ_NOM, KK_NOM)
+               
+               BNDRY_TYPE = OMESH(NOM)%EWC_TYPE(II_NOM,JJ_NOM,KK_NOM)
+               
+               ! Only print if boundary type is defined (not IS_UNDEFINED)
+               IF (BNDRY_TYPE /= IS_UNDEFINED) THEN
+                  WRITE(0,'(A,I3,A,I5,A,3I4,A,I2,A,I3,A,3I4,A,3I4,A,I3)') &
+                     'MESH',NM,' IW=',IW,' INT(',IIG,JJG,KKG,') IOR=',IOR, &
+                     ' -> MESH',NOM,' EXT(',IIO,JJO,KKO,') GUARD(',II_NOM,JJ_NOM,KK_NOM,') TYPE=',BNDRY_TYPE
+               ENDIF
+               
+            ENDDO
+         ENDDO
+      ENDDO
+      
+   ENDDO EXTERNAL_WALL_LOOP_DIAG
+   
+ENDDO
+
+RETURN
+END SUBROUTINE WRITE_EWC_TYPE_DIAGNOSTIC
 
 ! ------------------------------- COPY_CCVAR_IN_HS ----------------------------------
 
 SUBROUTINE COPY_CCVAR_IN_HS(VAR_CC)
 
-USE MESH_POINTERS
 INTEGER, INTENT(IN) :: VAR_CC
-
-! Local Variables:
-INTEGER :: NM
+INTEGER :: NM,IW,II,JJ,KK
+TYPE(WALL_TYPE), POINTER :: WC
+TYPE(BOUNDARY_COORD_TYPE), POINTER :: BC
 
 DO NM=LOWER_MESH_INDEX,UPPER_MESH_INDEX
    CALL POINT_TO_MESH(NM)
-   HS(0:IBP1,0:JBP1,0:KBP1) = REAL(CCVAR(0:IBP1,0:JBP1,0:KBP1,VAR_CC),EB)
-
-   ! Now cut-cells add their single Cartesian UNKH value in HS:
-   IF(CC_IBM .AND. VAR_CC==UNKH) CALL COPY_CC_UNKH_TO_HS(NM)
+   
+   ! Special case for IS_WALLT: populate HS from WALL array instead of CCVAR
+   IF (VAR_CC == IS_WALLT) THEN
+      HS(:,:,:) = REAL(IS_UNDEFINED,EB)  ! Initialize
+      DO IW=1,N_EXTERNAL_WALL_CELLS
+         WC => WALL(IW)
+         BC => BOUNDARY_COORD(WC%BC_INDEX)
+         II = BC%II; JJ = BC%JJ; KK = BC%KK
+         HS(II,JJ,KK) = REAL(WC%BOUNDARY_TYPE,EB)
+      ENDDO
+   ELSE
+      ! Standard case: copy from CCVAR to HS
+      HS(0:IBP1,0:JBP1,0:KBP1) = REAL(CCVAR(0:IBP1,0:JBP1,0:KBP1,VAR_CC),EB)
+      
+      ! Now cut-cells add their single Cartesian UNKH value in HS:
+      IF(CC_IBM .AND. VAR_CC==UNKH) CALL COPY_CC_UNKH_TO_HS(NM)
+   ENDIF
 
 ENDDO
 
@@ -3927,6 +4235,7 @@ END SUBROUTINE COPY_CCVAR_IN_HS
 ! ------------------------------- GET_H_MATRIX_LUDCMP -------------------------------
 
 SUBROUTINE GET_H_MATRIX_LUDCMP
+
 #if defined WITH_MKL || defined WITH_HYPRE
 USE MPI_F08
 #endif
@@ -4010,6 +4319,16 @@ IPZ_LOOP : DO IPZ=0,N_ZONE_GLOBMAT
       ZSL%LOWER_ROW = MAX(1,ZSL%UNKH_IND(NM_START))
       ZSL%UPPER_ROW = MAX(1,ZSL%UNKH_IND(NM_START))
    ENDIF
+
+!   OPEN(unit=20,file="Matrix_H_UGLMAT.txt",action="write",status="replace")
+!   DO IROW=1,ZSL%NUNKH_LOCAL
+!      DO JCOL=1,ZSL%ROW_H(IROW)%NNZ
+!         WRITE(20,'(I6,",",I6,",",F18.12)') IROW, ZSL%ROW_H(IROW)%JD(JCOL), ZSL%ROW_H(IROW)%D(JCOL)
+!      ENDDO
+!   ENDDO
+!   CLOSE(20)
+!   WRITE(0,*) 'H Matrix file written...'
+!   STOP
 
    LIBRARY_SELECT: SELECT CASE(UGLMAT_SOLVER_LIBRARY)
 
@@ -4299,12 +4618,9 @@ END SUBROUTINE SET_CLUSTER_SOLVER_IPARM
 SUBROUTINE GET_BCS_H_MATRIX
 
 USE MPI_F08
-USE MESH_POINTERS
 USE COMPLEX_GEOMETRY, ONLY : CC_IDRC
 USE CC_SCALARS, ONLY : GET_CC_UNKH, GET_CFACE_OPEN_BC_COEF
-
-! Local Variables:
-INTEGER :: NM,NM1,JLOC,JCOL,IND(LOW_IND:HIGH_IND),IND_LOC(LOW_IND:HIGH_IND),IERR,IIG,JJG,KKG,II,JJ,KK,IW,ILH,JLH,KLH,IRC
+INTEGER :: NM,NM1,JLOC,JCOL,IND(LOW_IND:HIGH_IND),IND_LOC(LOW_IND:HIGH_IND),IERR,IIG,JJG,KKG,IW,ILH,JLH,KLH,IRC
 REAL(EB):: AF,IDX,BIJ
 TYPE(WALL_TYPE), POINTER :: WC
 TYPE (BOUNDARY_COORD_TYPE), POINTER :: BC
@@ -4328,7 +4644,6 @@ IPZ_LOOP : DO IPZ=0,N_ZONE_GLOBMAT
          IIG = BC%IIG; JJG = BC%JJG; KKG = BC%KKG
          IF((.NOT.CC_IBM .AND. CCVAR(IIG,JJG,KKG,UNKH)<1) &
              .OR. ZONE_SOLVE(PRESSURE_ZONE(IIG,JJG,KKG))%CONNECTED_ZONE_PARENT/=IPZ) CYCLE
-         II  = BC%II;  JJ  = BC%JJ;  KK  = BC%KK
          ! Unknowns on related cells:
          IF(CCVAR(IIG,JJG,KKG,CGSC)==IS_GASPHASE .OR. PRES_ON_WHOLE_DOMAIN) THEN
             IND(LOW_IND)  = CCVAR(IIG,JJG,KKG,UNKH)  ! internal cell.
@@ -4395,22 +4710,24 @@ END SUBROUTINE GET_BCS_H_MATRIX
 
 SUBROUTINE GET_H_MATRIX
 
-USE MESH_POINTERS
 USE CC_SCALARS, ONLY : GET_H_MATRIX_CC
-
-! Local Variables:
 INTEGER :: NM,NM1,NREG
 INTEGER :: LOW_FACE,HIGH_FACE,X1AXIS,X2AXIS,X3AXIS,IFACE
 REAL(EB), POINTER, DIMENSION(:)   :: DX1,DX2,DX3
 INTEGER :: I,J,K,I1,I2,I3,IIP,JJP,KKP,IIM,JJM,KKM
 INTEGER :: ILOC,JLOC,IROW,JCOL,IND(LOW_IND:HIGH_IND),IND_LOC(LOW_IND:HIGH_IND)
-REAL(EB):: AF,IDX,BIJ,KFACE(1:2,1:2)
+REAL(EB):: AF,IDX,BIJ,KFACE(1:2,1:2)  ! KFACE still used for regular internal faces
 TYPE(CC_REGFACE_TYPE), POINTER, DIMENSION(:) :: RGF
 TYPE(WALL_TYPE), POINTER :: WC
 TYPE (BOUNDARY_COORD_TYPE), POINTER :: BC
 TYPE (EXTERNAL_WALL_TYPE), POINTER :: EWC
 INTEGER :: IIG,JJG,KKG,II,JJ,KK,IOR,LOCROW,IW
-INTEGER :: WC_JD(1:2,1:2)
+INTEGER :: IIO,JJO,KKO,NOM  ! Grid refinement: loop indices and neighboring mesh number
+INTEGER :: II_NOM,JJ_NOM,KK_NOM  ! Grid refinement: guard cell indices in neighboring mesh
+INTEGER :: IUNK_INT,IUNK_EXT,IROW_INT  ! Grid refinement: unknown numbers for internal and external cells
+REAL(EB):: AF_INT,AF_EXT,DX_INT,DX_EXT  ! Grid refinement: areas and distances for both cells
+TYPE(MESH_TYPE), POINTER :: M2  ! Grid refinement: pointer to neighboring mesh
+TYPE(OMESH_TYPE), POINTER :: OM  ! Grid refinement: pointer to OMESH data
 LOGICAL :: FLG
 
 IPZ_LOOP : DO IPZ=0,N_ZONE_GLOBMAT
@@ -4505,61 +4822,153 @@ IPZ_LOOP : DO IPZ=0,N_ZONE_GLOBMAT
 
       ! Next, Wall faces of type INTERPOLATED_BOUNDARY or PERIODIC_BOUNDARY:
       ! Here We have to do something about WALL cells that are also cut-faces, who wins? Make cut-faces take precedence.
+      !
+      ! MODIFICATION FOR GRID REFINEMENT:
+      ! Loop over ALL cells in neighboring mesh and compute flux coupling coefficients for each.
+      ! Column indices are searched on-the-fly (no pre-storage needed).
+      !
       LOCROW = LOW_IND
       WALL_LOOP_1 : DO IW=1,N_EXTERNAL_WALL_CELLS
 
          WC => WALL(IW)
          BC => BOUNDARY_COORD(WC%BC_INDEX)
          EWC=>EXTERNAL_WALL(IW)
+
          FLG = WC%BOUNDARY_TYPE==PERIODIC_BOUNDARY .OR. WC%BOUNDARY_TYPE==INTERPOLATED_BOUNDARY
          IF(PRES_ON_WHOLE_DOMAIN) &
          FLG = FLG .OR. WC%BOUNDARY_TYPE==NULL_BOUNDARY .OR. (WC%BOUNDARY_TYPE==SOLID_BOUNDARY .AND. EWC%NOM > 0)
          IF ( .NOT.FLG .OR. EWC%NOM<1) CYCLE ! Here if NOM==0 means it is an OBST laying on an external boundary -> CYCLE
-         IIG = BC%IIG; JJG = BC%JJG; KKG = BC%KKG
+         
+         IIG = BC%IIG; JJG = BC%JJG; KKG = BC%KKG; II = BC%II; JJ = BC%JJ; KK = BC%KK;
          IF(ZONE_SOLVE(PRESSURE_ZONE(IIG,JJG,KKG))%CONNECTED_ZONE_PARENT/=IPZ) CYCLE
-
-         WC_JD(1,1) = WC%JD11_INDEX
-         WC_JD(1,2) = WC%JD12_INDEX
-         WC_JD(2,1) = WC%JD21_INDEX
-         WC_JD(2,2) = WC%JD22_INDEX
-
-         II = BC%II; JJ = BC%JJ; KK = BC%KK; IOR = BC%IOR
-         ! Check if CC_IBM -> If either IIG,JJG,KKG or II,JJ,KK cell is type IS_CUTCFE or IS_SOLID cycle:
-         IF ( .NOT.PRES_ON_WHOLE_DOMAIN .AND. CC_IBM ) THEN
-            IF(CCVAR(II ,JJ ,KK ,CC_CGSC) /= IS_GASPHASE) CYCLE
-            IF(CCVAR(IIG,JJG,KKG,CC_CGSC) /= IS_GASPHASE) CYCLE
+         
+         IOR = BC%IOR
+         
+         ! Skip faces connected to cut-cells or solid - handled by GET_H_GUARD_CUTCELL
+         IF (CC_IBM) THEN
+            IF (CCVAR(IIG,JJG,KKG,CC_CGSC)/=IS_GASPHASE .OR. CCVAR(II,JJ,KK,CC_CGSC)/=IS_GASPHASE) CYCLE
          ENDIF
+ 
+         ! IUNK_INT and IROW_INT:
+         IUNK_INT = CCVAR(IIG,JJG,KKG,UNKH)  ! internal.
+         IROW_INT = IUNK_INT - ZSL%UNKH_IND(NM1)
 
-         ! Unknowns on related cells:
-         IND(LOW_IND)     = CCVAR(IIG,JJG,KKG,UNKH)  ! internal.
-         IND(HIGH_IND)    = CCVAR(II,JJ,KK,UNKH)     ! guard-cell.
-         IND_LOC(LOW_IND) = IND(LOW_IND) - ZSL%UNKH_IND(NM1) ! All row indexes must refer to ind_loc.
-         IND_LOC(HIGH_IND)= IND(HIGH_IND)- ZSL%UNKH_IND(NM1)
+         ! Get neighboring mesh information:
+         NOM = EWC%NOM
+         M2 => MESHES(NOM)
+         OM => OMESH(NOM)
+         
+         ! Distance from internal cell center to boundary face (half cell width):
          SELECT CASE(IOR)
          CASE( IAXIS)
-            AF = ((1._EB-CYL_FCT)*DY(JJG) + CYL_FCT*R(IIG-1)) * DZ(KKG);         IDX= 1._EB/DXN(IIG-1)
+            DX_INT = 0.5_EB * DXN(IIG-1)
          CASE(-IAXIS)
-            AF = ((1._EB-CYL_FCT)*DY(JJG) + CYL_FCT*R(IIG  )) * DZ(KKG);         IDX= 1._EB/DXN(IIG)
+            DX_INT = 0.5_EB * DXN(IIG)
          CASE( JAXIS)
-            AF = DX(IIG)*DZ(KKG);         IDX= 1._EB/DYN(JJG-1)
+            DX_INT = 0.5_EB * DYN(JJG-1)
          CASE(-JAXIS)
-            AF = DX(IIG)*DZ(KKG);         IDX= 1._EB/DYN(JJG)
+            DX_INT = 0.5_EB * DYN(JJG)
          CASE( KAXIS)
-            AF = ((1._EB-CYL_FCT)*DY(JJG) + CYL_FCT*RC(IIG  ))* DX(IIG);         IDX= 1._EB/DZN(KKG-1)
+            DX_INT = 0.5_EB * DZN(KKG-1)
          CASE(-KAXIS)
-            AF = ((1._EB-CYL_FCT)*DY(JJG) + CYL_FCT*RC(IIG  ))* DX(IIG);         IDX= 1._EB/DZN(KKG)
+            DX_INT = 0.5_EB * DZN(KKG)
          END SELECT
-         ! Now add to Adiff corresponding coeff:
-         BIJ = IDX*AF
-         ! Cols    ind(1)          ind(2)
-         KFACE(1,1)= BIJ; KFACE(1,2)=-BIJ ! Row ind(1)
-         KFACE(2,1)=-BIJ; KFACE(2,2)= BIJ ! Row ind(2)
-         ILOC = LOCROW                             ! Local row number in Kface, only for cell IIG,JJG,KKG.
-         DO JLOC = LOW_IND,HIGH_IND                ! Local col number in Kface, JD
-            IROW = IND_LOC(ILOC)                   ! Unknown number.
-            JCOL = WC_JD(ILOC,JLOC)
-            ZSL%ROW_H(IROW)%D(JCOL) = ZSL%ROW_H(IROW)%D(JCOL) + KFACE(ILOC,JLOC)
-         ENDDO
+         
+         ! Loop over ALL cells in the neighboring mesh that share this boundary face:
+         DO KKO = EWC%KKO_MIN, EWC%KKO_MAX
+            DO JJO = EWC%JJO_MIN, EWC%JJO_MAX
+               DO IIO = EWC%IIO_MIN, EWC%IIO_MAX
+                  
+                  ! Get unknown number for external cell in neighboring mesh:
+                  IUNK_EXT = OM%MUNKH(IIO,JJO,KKO)
+                  
+                  ! For UGLMAT, skip if external cell is solid:
+                  IF ( .NOT.PRES_ON_WHOLE_DOMAIN .AND.IUNK_EXT <= 0) CYCLE
+                  
+                  ! GRID REFINEMENT: Compute guard cell location in neighboring mesh based on IOR
+                  CALL COMPUTE_GUARD_CELL_INDEXES(IOR, IIO, JJO, KKO, II_NOM, JJ_NOM, KK_NOM)
+                  
+                  ! Check if external cell has INTERPOLATED_BOUNDARY type
+                  ! If not INTERPOLATED_BOUNDARY, skip (zero coefficient, no flux coupling)
+                  IF (ALLOCATED(OM%EWC_TYPE)) THEN
+                     IF (OM%EWC_TYPE(II_NOM,JJ_NOM,KK_NOM) /= INTERPOLATED_BOUNDARY) CYCLE
+                  ENDIF
+                  
+                  ! Area of INTERNAL cell face (current mesh):
+                  SELECT CASE(IOR)
+                  CASE( IAXIS, -IAXIS)
+                     IF (CYLINDRICAL) THEN
+                        AF_INT = ((1._EB-CYL_FCT)*DY(JJG) + CYL_FCT*R(IIG)) * DZ(KKG)
+                     ELSE
+                        AF_INT = DY(JJG) * DZ(KKG)
+                     ENDIF
+                  CASE( JAXIS, -JAXIS)
+                     AF_INT = DX(IIG) * DZ(KKG)
+                  CASE( KAXIS, -KAXIS)
+                     IF (CYLINDRICAL) THEN
+                        AF_INT = ((1._EB-CYL_FCT)*DY(JJG) + CYL_FCT*RC(IIG)) * DX(IIG)
+                     ELSE
+                        AF_INT = DX(IIG) * DY(JJG)
+                     ENDIF
+                  END SELECT
+                  
+                  ! Area of EXTERNAL cell face (other mesh):
+                  SELECT CASE(IOR)
+                  CASE( IAXIS, -IAXIS)
+                     IF (CYLINDRICAL) THEN
+                        AF_EXT = ((1._EB-CYL_FCT)*M2%DY(JJO) + CYL_FCT*M2%R(IIO)) * M2%DZ(KKO)
+                     ELSE
+                        AF_EXT = M2%DY(JJO) * M2%DZ(KKO)
+                     ENDIF
+                  CASE( JAXIS, -JAXIS)
+                     AF_EXT = M2%DX(IIO) * M2%DZ(KKO)
+                  CASE( KAXIS, -KAXIS)
+                     IF (CYLINDRICAL) THEN
+                        AF_EXT = ((1._EB-CYL_FCT)*M2%DY(JJO) + CYL_FCT*M2%RC(IIO)) * M2%DX(IIO)
+                     ELSE
+                        AF_EXT = M2%DX(IIO) * M2%DY(JJO)
+                     ENDIF
+                  END SELECT
+                  
+                  ! Use the MINIMUM area (actual contact/intersection area):
+                  AF = MIN(AF_INT, AF_EXT)
+                  
+                  ! Distance from boundary face to external cell center (half cell width):
+                  SELECT CASE(IOR)
+                  CASE( IAXIS, -IAXIS)
+                     DX_EXT = 0.5_EB * M2%DXN(IIO)
+                  CASE( JAXIS, -JAXIS)
+                     DX_EXT = 0.5_EB * M2%DYN(JJO)
+                  CASE( KAXIS, -KAXIS)
+                     DX_EXT = 0.5_EB * M2%DZN(KKO)
+                  END SELECT
+                  
+                  ! Inverse of total distance between cell centers:
+                  IDX = 1._EB / (DX_INT + DX_EXT)
+                  
+                  ! Flux coupling coefficient:
+                  BIJ = IDX * AF
+                  
+                  ! (1) Add to DIAGONAL of internal cell row:
+                  DO JLOC = 1, ZSL%ROW_H(IROW_INT)%NNZ
+                     IF (IUNK_INT == ZSL%ROW_H(IROW_INT)%JD(JLOC)) THEN
+                        ZSL%ROW_H(IROW_INT)%D(JLOC) = ZSL%ROW_H(IROW_INT)%D(JLOC) + BIJ
+                        EXIT
+                     ENDIF
+                  ENDDO
+                  
+                  ! (2) Add to OFF-DIAGONAL coupling to external cell:
+                  DO JLOC = 1, ZSL%ROW_H(IROW_INT)%NNZ
+                     IF (IUNK_EXT == ZSL%ROW_H(IROW_INT)%JD(JLOC)) THEN
+                        ZSL%ROW_H(IROW_INT)%D(JLOC) = ZSL%ROW_H(IROW_INT)%D(JLOC) - BIJ
+                        EXIT
+                     ENDIF
+                  ENDDO
+                  
+               ENDDO ! IIO loop
+            ENDDO ! JJO loop
+         ENDDO ! KKO loop
+         
       ENDDO WALL_LOOP_1
 
       ! Contribution to Laplacian matrix from RC and cut-faces:
@@ -4575,7 +4984,6 @@ END SUBROUTINE GET_H_MATRIX
 
 SUBROUTINE GET_MATRIXGRAPH_H_WHLDOM
 
-USE MESH_POINTERS
 USE CC_SCALARS, ONLY : GET_CC_MATRIXGRAPH_H, ADD_INPLACE_NNZ_H_WHLDOM
 USE MPI_F08
 
@@ -4583,13 +4991,14 @@ USE MPI_F08
 INTEGER :: NM
 INTEGER :: X1AXIS,IFACE,I,I1,J,K,IND(LOW_IND:HIGH_IND),IND_LOC(LOW_IND:HIGH_IND)
 INTEGER :: LOCROW,IIND,NII,ILOC
-INTEGER :: NREG,IIM,JJM,KKM,IIP,JJP,KKP,LOW_FACE,HIGH_FACE,IW,II,JJ,KK,IIG,JJG,KKG,ICF
+INTEGER :: NREG,IIM,JJM,KKM,IIP,JJP,KKP,LOW_FACE,HIGH_FACE,IW,IIG,JJG,KKG,II,JJ,KK,ICF
 TYPE(CC_REGFACE_TYPE), POINTER, DIMENSION(:) :: RGF
 TYPE(CC_RCFACE_TYPE), POINTER :: RCF
 TYPE(WALL_TYPE), POINTER :: WC
 TYPE (BOUNDARY_COORD_TYPE), POINTER :: BC
 TYPE(EXTERNAL_WALL_TYPE), POINTER :: EWC
-INTEGER :: WC_JD(1:2,1:2)
+INTEGER :: IIO,JJO,KKO,NOM  ! Grid refinement: loop indices and neighboring mesh number
+INTEGER :: II_NOM,JJ_NOM,KK_NOM  ! Grid refinement: guard cell indices in neighboring mesh
 LOGICAL :: FLG
 
 ! Write number of pressure unknowns to output:
@@ -4695,6 +5104,11 @@ IPZ_LOOP : DO IPZ=0,N_ZONE_GLOBMAT
 
       ! Next, Wall faces of type INTERPOLATED_BOUNDARY or PERIODIC_BOUNDARY:
       ! Here We have to do something about WALL cells that are also cut-faces, who wins? Make cut-faces take precedence.
+      ! 
+      ! MODIFICATION FOR GRID REFINEMENT:
+      ! Loop over ALL cells in the neighboring mesh (EWC%IIO_MIN:IIO_MAX, etc.) to handle cases where
+      ! one coarse cell in this mesh connects to multiple fine cells in the neighboring mesh.
+      !
       LOCROW = LOW_IND
       WALL_LOOP_1 : DO IW=1,N_EXTERNAL_WALL_CELLS
          WC => WALL(IW)
@@ -4704,19 +5118,56 @@ IPZ_LOOP : DO IPZ=0,N_ZONE_GLOBMAT
          IF(PRES_ON_WHOLE_DOMAIN) &
          FLG = FLG .OR. WC%BOUNDARY_TYPE==NULL_BOUNDARY .OR. (WC%BOUNDARY_TYPE==SOLID_BOUNDARY .AND. EWC%NOM > 0)
          IF ( .NOT.FLG .OR. EWC%NOM<1) CYCLE ! Here if NOM==0 means it is an OBST laying on an external boundary -> CYCLE
-         IIG = BC%IIG; JJG = BC%JJG; KKG = BC%KKG; II = BC%II; JJ = BC%JJ; KK = BC%KK
+         
+         IIG = BC%IIG; JJG = BC%JJG; KKG = BC%KKG; II = BC%II; JJ = BC%JJ; KK = BC%KK;
          IF(ZONE_SOLVE(PRESSURE_ZONE(IIG,JJG,KKG))%CONNECTED_ZONE_PARENT/=IPZ) CYCLE
-         ! Check if CC_IBM -> If either IIG,JJG,KKG or II,JJ,KK cell is type IS_CUTCFE or IS_SOLID cycle:
+         
+         ! Skip faces connected to cut-cells or solid - handled by GET_CC_MATRIXGRAPH_H
          IF (CC_IBM) THEN
-            IF(CCVAR(II ,JJ ,KK ,CC_CGSC) /= IS_GASPHASE) CYCLE
-            IF(CCVAR(IIG,JJG,KKG,CC_CGSC) /= IS_GASPHASE) CYCLE
+            IF (CCVAR(IIG,JJG,KKG,CC_CGSC)/=IS_GASPHASE .OR. CCVAR(II,JJ,KK,CC_CGSC)/=IS_GASPHASE) CYCLE
          ENDIF
-         ! Unknowns on related cells:
-         IND(LOW_IND)     = CCVAR(IIG,JJG,KKG,UNKH)  ! internal.
-         IND(HIGH_IND)    = CCVAR(II,JJ,KK,UNKH)     ! guard-cell.
-         IND_LOC(LOW_IND) = IND(LOW_IND) - ZSL%UNKH_IND(NM_START) ! All row indexes must refer to ind_loc.
-         IND_LOC(HIGH_IND)= IND(HIGH_IND)- ZSL%UNKH_IND(NM_START)
-         CALL ADD_INPLACE_NNZ_H_WHLDOM(LOCROW,LOCROW,IND,IND_LOC,IPZ)
+         
+         ! Get the neighboring mesh number:
+         NOM = EWC%NOM
+         
+         ! Loop over ALL cells in the neighboring mesh that share this boundary face.
+         ! For same refinement: IIO_MIN==IIO_MAX (single cell)
+         ! For 2:1 refinement: IIO_MIN to IIO_MAX spans 2 cells in one direction (4 cells for face, 8 for edge)
+         ! For 4:1 refinement: spans 4 cells in one direction (16 cells for face)
+         !
+         DO KKO = EWC%KKO_MIN, EWC%KKO_MAX
+            DO JJO = EWC%JJO_MIN, EWC%JJO_MAX
+               DO IIO = EWC%IIO_MIN, EWC%IIO_MAX
+                  
+                  ! For UGLMAT, check if the external cell is gas phase:
+                  IF(.NOT.PRES_ON_WHOLE_DOMAIN .AND. OMESH(NOM)%MUNKH(IIO,JJO,KKO) <= 0) CYCLE
+                  
+                  ! GRID REFINEMENT: Compute guard cell location in neighboring mesh based on IOR
+                  CALL COMPUTE_GUARD_CELL_INDEXES(BC%IOR, IIO, JJO, KKO, II_NOM, JJ_NOM, KK_NOM)
+                  
+                  ! Check if external cell has INTERPOLATED_BOUNDARY type
+                  ! If not INTERPOLATED_BOUNDARY, skip (no connectivity, zero gradient)
+                  IF (ALLOCATED(OMESH(NOM)%EWC_TYPE)) THEN
+                     IF (OMESH(NOM)%EWC_TYPE(II_NOM,JJ_NOM,KK_NOM) /= INTERPOLATED_BOUNDARY) CYCLE
+                  ENDIF
+                  
+                  ! Unknown numbers on related cells:
+                  IND(LOW_IND)  = CCVAR(IIG,JJG,KKG,UNKH)        ! internal cell in this mesh
+                  IND(HIGH_IND) = OMESH(NOM)%MUNKH(IIO,JJO,KKO)  ! cell in neighboring mesh
+                  
+                  ! Convert to local row numbering:
+                  IND_LOC(LOW_IND)  = IND(LOW_IND)  - ZSL%UNKH_IND(NM_START)
+                  IND_LOC(HIGH_IND) = IND(HIGH_IND) - ZSL%UNKH_IND(NM_START)
+                  
+                  ! Add this connectivity to the matrix graph.
+                  ! This function adds IND(HIGH_IND) to the column list (JD array) of row IND(LOW_IND),
+                  ! and vice versa for symmetric matrices.
+                  CALL ADD_INPLACE_NNZ_H_WHLDOM(LOCROW,LOCROW,IND,IND_LOC,IPZ)
+                  
+               ENDDO ! IIO loop
+            ENDDO ! JJO loop
+         ENDDO ! KKO loop
+         
       ENDDO WALL_LOOP_1
 
       ! Finally Add nonzeros corresponding to RC_FACE, CUT_FACE
@@ -4784,44 +5235,6 @@ IPZ_LOOP : DO IPZ=0,N_ZONE_GLOBMAT
          NULLIFY(RGF)
       ENDDO AXIS_LOOP_2
 
-      ! Now Wall faces column locations:
-      LOCROW = LOW_IND
-      WALL_LOOP_2 : DO IW=1,N_EXTERNAL_WALL_CELLS+N_INTERNAL_WALL_CELLS
-         WC => WALL(IW)
-         BC => BOUNDARY_COORD(WC%BC_INDEX)
-         WC_JD(1:2,1:2) = IS_UNDEFINED
-         IF (.NOT.PRES_ON_WHOLE_DOMAIN .AND. WC%BOUNDARY_TYPE==NULL_BOUNDARY) CYCLE
-         IF(IW <= N_EXTERNAL_WALL_CELLS) THEN
-            ! Here if NOM==0 means it is an OBST laying on an external boundary -> CYCLE
-            EWC=>EXTERNAL_WALL(IW); IF(EWC%NOM < 1) CYCLE
-         ENDIF
-         IIG = BC%IIG; JJG = BC%JJG; KKG = BC%KKG; II = BC%II; JJ = BC%JJ; KK = BC%KK
-         IF((.NOT.CC_IBM .AND. CCVAR(IIG,JJG,KKG,UNKH)<1) &
-            .OR. ZONE_SOLVE(PRESSURE_ZONE(IIG,JJG,KKG))%CONNECTED_ZONE_PARENT/=IPZ) CYCLE
-         ! Check if CC_IBM -> If either IIG,JJG,KKG or II,JJ,KK cell is type IS_CUTCFE or IS_SOLID cycle:
-         IF (CC_IBM) THEN
-            IF(CCVAR(II ,JJ ,KK ,CC_CGSC) /= IS_GASPHASE) CYCLE
-            IF(CCVAR(IIG,JJG,KKG,CC_CGSC) /= IS_GASPHASE) CYCLE
-         ENDIF
-         ! Unknowns on related cells:
-         IND(LOW_IND)     = CCVAR(IIG,JJG,KKG,UNKH)  ! internal.
-         IND(HIGH_IND)    = CCVAR(II,JJ,KK,UNKH)     ! guard-cell.
-         IND_LOC(LOW_IND) = IND(LOW_IND) - ZSL%UNKH_IND(NM_START) ! All row indexes must refer to ind_loc.
-         IND_LOC(HIGH_IND)= IND(HIGH_IND)- ZSL%UNKH_IND(NM_START)
-         DO IIND=LOW_IND,HIGH_IND
-            NII = ZSL%ROW_H(IND_LOC(LOCROW))%NNZ
-            DO ILOC=1,NII
-               IF ( IND(IIND) == ZSL%ROW_H(IND_LOC(LOCROW))%JD(ILOC) ) THEN
-                  WC_JD(LOCROW,IIND) = ILOC
-                  EXIT
-               ENDIF
-            ENDDO
-         ENDDO
-         WC%JD11_INDEX = WC_JD(1,1)
-         WC%JD12_INDEX = WC_JD(1,2)
-         WC%JD21_INDEX = WC_JD(2,1)
-         WC%JD22_INDEX = WC_JD(2,2)
-      ENDDO WALL_LOOP_2
       ! Finally cut-face:
       IF (CC_IBM) CALL GET_CC_MATRIXGRAPH_H(NM,NM_START,IPZ,.FALSE.)
    ENDDO MESH_LOOP_2
@@ -4835,10 +5248,7 @@ END SUBROUTINE GET_MATRIXGRAPH_H_WHLDOM
 
 SUBROUTINE GET_H_REGFACES
 
-USE MESH_POINTERS
 USE CC_SCALARS, ONLY : GET_RCFACES_H
-
-! Local Variables:
 INTEGER :: NM
 INTEGER :: ILO,IHI,JLO,JHI,KLO,KHI
 INTEGER :: I,J,K,II,IREG,X1AXIS
@@ -5000,11 +5410,8 @@ END SUBROUTINE GET_H_REGFACES
 
 SUBROUTINE GET_MATRIX_INDEXES_H
 
-USE MESH_POINTERS
 USE CC_SCALARS, ONLY : NUMBER_UNKH_CUTCELLS
 USE MPI_F08
-
-! Local Variables:
 INTEGER :: NM
 INTEGER :: I,J,K,IERR
 INTEGER, ALLOCATABLE, DIMENSION(:) :: NUNKH_TOT
@@ -5178,9 +5585,7 @@ END SUBROUTINE SET_CCVAR_CGSC_H
 
 SUBROUTINE PRESSURE_SOLVER_CHECK_RESIDUALS_U(NM)
 
-USE MESH_POINTERS
 USE COMP_FUNCTIONS, ONLY: CURRENT_TIME
-USE GLOBAL_CONSTANTS
 USE PRES, ONLY : PRESSURE_SOLVER_CHECK_RESIDUALS
 USE CC_SCALARS, ONLY : UNSTRUCTURED_POISSON_RESIDUAL, UNSTRUCTURED_POISSON_RESIDUAL_RC, &
                        COMPUTE_LINKED_CUTFACE_BAROCLINIC
@@ -5362,7 +5767,7 @@ USE HYPRE_INTERFACE
 #endif
 
 ! Local variables:
-INTEGER :: MAXFCT, MNUM, PHASE, NRHS, ERROR, MSGLVL
+INTEGER :: MAXFCT, MNUM, PHASE, NRHS, ERROR, MSGLVL, NOM
 #ifdef WITH_MKL
 INTEGER :: PERM(1)
 #endif
@@ -5396,6 +5801,13 @@ IF (UGLMAT_SOLVER_LIBRARY==HYPRE_FLAG) THEN
    DEALLOCATE(ZSL_COMM)
 #endif
 ENDIF
+
+! Deallocate OMESH arrays used for grid refinement:
+DO NOM=1,NMESHES
+   IF (ALLOCATED(OMESH(NOM)%GSCH)) DEALLOCATE(OMESH(NOM)%GSCH)
+   IF (ALLOCATED(OMESH(NOM)%MUNKH)) DEALLOCATE(OMESH(NOM)%MUNKH)
+   IF (ALLOCATED(OMESH(NOM)%EWC_TYPE)) DEALLOCATE(OMESH(NOM)%EWC_TYPE)
+ENDDO
 
 DEALLOCATE(ZONE_SOLVE)
 

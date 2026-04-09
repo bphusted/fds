@@ -79,24 +79,177 @@ def expand_ranges(items, df, header_rows=1):
     return sorted(set(result))
 
 
-def dataplot(config_filename,**kwargs):
+def _compute_metrics_block(
+    x, Y, metric, initial_value,
+    comp_start, comp_end, dep_comp_start, dep_comp_end,
+    variant_side="d1",
+):
+    """
+    MATLAB dataplot.m metric logic, shape-safe Python equivalent.
+
+    Returns:
+      vals_flat : 1D np.array (metrics for each curve, or concatenated for 'all')
+      titles    : list of metric labels
+      per_curve_series : list of per-curve metric arrays (for Metric='all')
+    """
+    import numpy as np
+
+    # --- normalize inputs ---
+    x = np.asarray(x).reshape(-1)
+    Y = np.asarray(Y)
+    if Y.ndim == 1:
+        Y = Y.reshape(-1, 1)
+    elif Y.ndim > 2:
+        Y = np.squeeze(Y)
+        if Y.ndim == 1:
+            Y = Y.reshape(-1, 1)
+
+    N, ncols = Y.shape
+
+    # --- support patterns like mean_1_2, max_2_1, end_1_2 ---
+    # NOTE: we deliberately DO NOT parse "all_*_*" here.
+    def _parse_stat_xy(m):
+        m = m.lower().strip()
+        for base in ("max", "mean", "end"):
+            pref = base + "_"
+            if m.startswith(pref):
+                try:
+                    a, b = m[len(pref):].split("_", 1)
+                    return base, int(a), int(b)
+                except Exception:
+                    pass
+        return m, None, None
+
+    metric_str = str(metric).strip().lower()
+    base, idx_first, idx_second = _parse_stat_xy(metric_str)
+
+    # --- comparison mask (like MATLAB) ---
+    comp_mask = np.isfinite(x)
+    if np.isfinite(comp_start):
+        comp_mask &= (x >= comp_start)
+    if np.isfinite(comp_end):
+        comp_mask &= (x <= comp_end)
+
+    if np.isfinite(dep_comp_start) or np.isfinite(dep_comp_end):
+        y0 = Y[:, 0]
+        dep_mask = np.isfinite(y0)
+        if np.isfinite(dep_comp_start):
+            dep_mask &= (y0 >= dep_comp_start)
+        if np.isfinite(dep_comp_end):
+            dep_mask &= (y0 <= dep_comp_end)
+        comp_mask &= dep_mask
+
+    if not np.any(comp_mask) and metric_str != "slope":
+        return np.array([]), [], []
+
+    x_sel = x[comp_mask]
+    Y_sel = Y[comp_mask, :]
+
+    vals = []
+    titles = []
+    per_curve_series = []
+
+    # --- stat_x_y: use first index for EXP, second index for MODEL ---
+    # Example: "mean_2_3"
+    #   EXP side (variant_side='d1') → column 2
+    #   MODEL side (variant_side='d2') → column 3
+    if idx_first is not None:
+        if variant_side == "d2" and idx_second is not None:
+            idx_use = idx_second
+        else:
+            idx_use = idx_first
+
+        j = idx_use - 1  # 1-based → 0-based
+        if j < 0 or j >= ncols:
+            return np.array([]), [], []
+
+        yj = Y_sel[:, j].reshape(-1)
+
+        if base == "max":
+            out = np.nanmax(yj) - initial_value
+        elif base == "mean":
+            out = abs(np.nanmean(yj) - initial_value)
+        elif base == "end":
+            out = yj[-1] - initial_value
+        else:
+            out = np.nan
+
+        if out == 0.0:
+            out = 1e-12
+
+        return np.array([out]), [f"curve{idx_use}"], []
+
+    # --- metric='all': return all finite Y values (one per data point) ---
+    if metric_str == "all":
+        for j in range(ncols):
+            yj = Y_sel[:, j].reshape(-1)
+            mask = np.isfinite(yj)
+            yj = yj[mask] - initial_value
+            per_curve_series.append(yj)
+            titles.extend([f"point{k+1}_curve{j+1}" for k in range(len(yj))])
+        vals_flat = np.concatenate(per_curve_series) if per_curve_series else np.array([])
+        return vals_flat, titles, per_curve_series
+
+    # --- scalar per-curve metrics ---
+    for j in range(ncols):
+        yj = Y_sel[:, j].reshape(-1)
+        if metric_str == "max":
+            out = np.nanmax(yj) - initial_value
+        elif metric_str == "min":
+            out = initial_value - np.nanmin(yj)
+        elif metric_str == "maxabs":
+            out = np.nanmax(np.abs(yj - initial_value))
+        elif metric_str == "slope":
+            msk = np.isfinite(x_sel) & np.isfinite(yj)
+            out = np.polyfit(x_sel[msk], yj[msk], 1)[0] if msk.sum() >= 2 else 0.0
+        elif metric_str == "mean":
+            out = abs(np.nanmean(yj) - initial_value)
+        elif metric_str == "threshold":
+            out = np.nanmin(yj) - initial_value
+        elif metric_str == "tolerance":
+            out = np.nanmax(np.abs(yj - initial_value))
+        elif metric_str == "area":
+            out = np.trapz(yj, x_sel) - initial_value
+        elif metric_str == "end":
+            out = yj[-1] - initial_value
+        elif metric_str == "start":
+            out = yj[0]
+        elif metric_str == "ipct":
+            out = 1e-12  # placeholder for parity
+        else:
+            out = 1e-12
+
+        if out == 0.0:
+            out = 1e-12
+
+        vals.append(out)
+        titles.append(f"curve{j+1}")
+
+    return np.asarray(vals, dtype=float).reshape(-1), titles, []
+
+
+def dataplot(config_filename, **kwargs):
 
     import os
     import matplotlib.pyplot as plt
     import pandas as pd
+    import numpy as np
     from matplotlib import rc
-
     import logging
-    # Suppress just the 'findfont' warnings from matplotlib's font manager
+
     logging.getLogger('matplotlib.font_manager').setLevel(logging.ERROR)
 
-    # defaults
+    _csv_cache = {}
+    def read_csv_cached(path, **kwargs):
+        if path not in _csv_cache:
+            _csv_cache[path] = pd.read_csv(path, **kwargs)
+        return _csv_cache[path].copy()
 
-    configdir = kwargs.get('configdir','')
-    revision = kwargs.get('revision','')
-    expdir = kwargs.get('expdir','')
-    cmpdir = kwargs.get('cmpdir','')
-    pltdir = kwargs.get('pltdir','')
+    configdir = kwargs.get('configdir', '')
+    revision = kwargs.get('revision', '')
+    expdir = kwargs.get('expdir', '')
+    cmpdir = kwargs.get('cmpdir', '')
+    pltdir = kwargs.get('pltdir', '')
     close_figs = kwargs.get('close_figs', False)
     verbose = kwargs.get('verbose', False)
 
@@ -104,7 +257,6 @@ def dataplot(config_filename,**kwargs):
     plot_range_in = kwargs.get('plot_range', None)
     header_rows = kwargs.get('header_rows', 1)
 
-    # --- Initialize scaffolding for scatplot compatibility ---
     drange = []
     Save_Quantity = []
     Save_Group_Style = []
@@ -119,83 +271,84 @@ def dataplot(config_filename,**kwargs):
     Save_Metric_Type = []
     Save_Measured_Quantity = []
     Save_Predicted_Quantity = []
+    Save_csv_rownum = []
 
-    # Rebuild the default NA strings *excluding* 'N/A'
     default_na = {
         '', '#N/A', '#N/A N/A', '#NA', '-1.#IND', '-1.#QNAN',
         '1.#IND', '1.#QNAN', '<NA>', 'NA', 'NULL', 'NaN',
         'n/a', 'nan', 'null'
     }
-    safe_na_values = default_na  # 'N/A' intentionally not included
+    safe_na_values = default_na
 
-    # read the config file
-    df = pd.read_csv(configdir+config_filename, sep=',', engine='python', quotechar='"', na_values=safe_na_values, keep_default_na=False)
+    df = pd.read_csv(
+        configdir + config_filename,
+        sep=',',
+        engine='python',
+        quotechar='"',
+        na_values=safe_na_values,
+        keep_default_na=False
+    )
+    df["__orig_index__"] = df.index
     C = df.where(pd.notnull(df), None)
+
+    quantity_filter = kwargs.get("quantity_filter", None)
+    if quantity_filter:
+        if isinstance(quantity_filter, str):
+            quantity_filter = [quantity_filter]
+        mask = False
+        for q in quantity_filter:
+            mask = mask | C["Quantity"].str.contains(q, case=False, na=False)
+        C = C[mask]
+        if C.empty:
+            raise ValueError(f"[dataplot] No rows match Quantity filter(s): {quantity_filter}")
+        if verbose:
+            matched_rows = (C["__orig_index__"] + 2).tolist()
+            print(f"[dataplot] Filtering by Quantity={quantity_filter}")
 
     if plot_range_in is not None:
         if isinstance(plot_range_in, (list, tuple)):
             adjusted = expand_ranges(plot_range_in, C, header_rows)
-            if len(adjusted) < len(C):  # filtering happened
+            if len(adjusted) < len(C):
                 C = C.iloc[adjusted]
         elif isinstance(plot_range_in, range):
             start, end = plot_range_in.start, plot_range_in.stop
-            adjusted = range(start - (header_rows + 1),
-                             end - header_rows)  # Python range already exclusive
+            adjusted = range(start - (header_rows + 1), end - header_rows)
             C = C.iloc[adjusted]
         else:
             raise TypeError("plot_range must be a list, tuple, or range")
     elif plot_list and 'all' not in [p.lower() for p in plot_list]:
-        # Only filter by plot_list if no plot_range was passed
         C = C[C['Dataname'].str.lower().isin([p.lower() for p in plot_list])]
 
-    Plot_Filename_Last = None
-    d1_Key_Last = None
+    otest_active = any(str(C.iloc[j]['switch_id']).strip().lower() == 'o' for j in range(len(C)))
     f_Last = plt.figure()
+    col_orig_idx = C.columns.get_loc("__orig_index__")
+    col_idx = {col: i for i, col in enumerate(C.columns)}
 
-    # loop over the rows of the config file
-    for pos, (irow, row) in enumerate(C.iterrows()):
+    fast_mode = bool(kwargs.get('fast_mode', True))
+    if verbose:
+        print(f"[dataplot] {'Running in fast_mode' if fast_mode else 'Running in full mode'}")
 
-        pp = define_plot_parameters(C, pos)  # use position, not label
+    for pos, row in enumerate(C.itertuples(index=False, name=None)):
 
-        # debug dump
-        # print(vars(pp))
+        csv_rownum = int(row[col_orig_idx]) + header_rows + 1
+        pp = define_plot_parameters(C, pos, lightweight=fast_mode)
 
-        # print(pp.__dict__) # helpful for debug
-
-        # ----------------------------------------------------------------------
-        # Handle MATLAB dataplot switch_id behavior (d, f, o, g, s)
-        # ----------------------------------------------------------------------
-        switch_id = str(pp.switch_id).strip().lower()
-
-        # Skip 's' outright
-        if switch_id == 's':
+        if pp.switch_id == 's':
+            continue
+        if otest_active and pp.switch_id != 'o':
             continue
 
-        # If ANY 'o' lines exist in the filtered config C, process only those
-        otest_active = any( str(C.iloc[j]['switch_id']).strip().lower() == 'o' for j in range(len(C)) )
+        gtest = (pp.switch_id == 'g')
+        dtest = (pp.switch_id == 'd')
+        ftest = (pp.switch_id == 'f')
 
-        if otest_active and switch_id != 'o':
-            continue
-
-        # 'g' lines: generate plots but EXCLUDE from scatplot stats & drange
-        gtest = (switch_id == 'g')
-
-        # 'd' default, 'f' follow-on (your filename reuse already mimics “hold on”)
-        dtest = (switch_id == 'd')
-        ftest = (switch_id == 'f')
-
-        # If it’s none of the recognized ones, skip safely
-        if not (dtest or ftest or gtest or switch_id == 'o'):
+        if not (dtest or ftest or gtest or pp.switch_id == 'o'):
             if verbose:
-                print(f"[dataplot] Skipping unrecognized switch_id '{pp.switch_id}' on line {irow+2}")
+                print(f"[dataplot] Skipping unrecognized switch_id '{pp.switch_id}' on line {csv_rownum}")
             continue
 
-        # Track drange like MATLAB (1-based CSV lines starting at row 2)
         if not gtest:
-            drange.append(irow + 2)
-
-        # Append metadata only for rows that should appear in scatplot
-        if not gtest:
+            drange.append(int(row[col_orig_idx]) + 2)
             Save_Dataname.append(pp.Dataname)
             Save_Plot_Filename.append(pp.Plot_Filename)
             Save_Dep_Title.append(pp.Dep_Title)
@@ -205,219 +358,553 @@ def dataplot(config_filename,**kwargs):
             Save_Quantity.append(pp.Quantity)
             Save_Group_Style.append(pp.Group_Style)
             Save_Fill_Color.append(pp.Fill_Color)
-
-            # Placeholders (we will overwrite for this row below)
             Save_Measured_Metric.append(np.nan)
             Save_Predicted_Metric.append(np.nan)
             Save_Measured_Quantity.append(None)
             Save_Predicted_Quantity.append(None)
+            Save_csv_rownum.append(None)
 
+        # ---------------------- LOAD EXP ----------------------
+        E = read_csv_cached(expdir + pp.d1_Filename,
+                            header=int(pp.d1_Col_Name_Row - 1),
+                            sep=',', engine='python', quotechar='"',
+                            skip_blank_lines=True).dropna(how='all')
+        E = E.loc[:E.dropna(how='all').last_valid_index()]
+        E.columns = E.columns.str.strip()
+        start_idx = int(pp.d1_Data_Row - pp.d1_Col_Name_Row - 1)
+        x, _ = get_data(E, pp.d1_Ind_Col_Name, start_idx)
+        y, _ = get_data(E, pp.d1_Dep_Col_Name, start_idx)
 
+        flip_axis = str(pp.Flip_Axis).strip().lower() in ['yes', 'true', '1']
 
-        if pp.Plot_Filename!=Plot_Filename_Last:
+        x_scaled = np.asarray(x, dtype=float).copy()
+        y_scaled = np.asarray(y, dtype=float).copy()
 
+        # ------------------------------------------------------------
+        # Apply d1_Start / d1_End to PLOTTED DATA (not just stats)
+        # ------------------------------------------------------------
+        if pp.d1_Start is not None or pp.d1_End is not None:
+            x0 = float(pp.d1_Start) if pp.d1_Start is not None else -np.inf
+            x1 = float(pp.d1_End)   if pp.d1_End   is not None else  np.inf
+
+            mask = (x_scaled >= x0) & (x_scaled <= x1)
+
+            # Preserve shape for multi-column data
+            if x_scaled.ndim == 2:
+                for j in range(x_scaled.shape[1]):
+                    mj = mask[:, j]
+                    x_scaled[:, j] = np.where(mj, x_scaled[:, j], np.nan)
+                    y_scaled[:, j] = np.where(mj, y_scaled[:, j], np.nan)
+            else:
+                x_scaled = np.where(mask, x_scaled, np.nan)
+                y_scaled = np.where(mask, y_scaled, np.nan)
+
+        x_scale = float(pp.Scale_Ind or 1.0)
+        y_scale = float(pp.Scale_Dep or 1.0)
+        x_scaled = x_scaled / x_scale
+        y_scaled = y_scaled / y_scale
+
+        if x_scaled.ndim == 2 and y_scaled.ndim == 2 and x_scaled.shape[1] == y_scaled.shape[1]:
+            x_plot_list = [x_scaled[:, i] for i in range(x_scaled.shape[1])]
+            y_plot_list = [y_scaled[:, i] for i in range(y_scaled.shape[1])]
+        elif y_scaled.ndim == 2 and y_scaled.shape[1] > 1:
+            x_plot_list = [x_scaled for _ in range(y_scaled.shape[1])]
+            y_plot_list = [y_scaled[:, i] for i in range(y_scaled.shape[1])]
+        else:
+            x_plot_list = [np.ravel(x_scaled)]
+            y_plot_list = [np.ravel(y_scaled)]
+
+        for xi, yi in zip(x_plot_list, y_plot_list):
+            if len(xi) != len(yi):
+                print(f"[dataplot] Pair length mismatch in {pp.Dataname}: x={len(xi)}, y={len(yi)}")
+
+        plot_type = str(pp.Plot_Type or '').strip().lower()
+        if plot_type not in ['linear', 'loglog', 'semilogx', 'semilogy']:
+            plot_type = 'linear'
+
+        raw_styles = [c.strip() for c in (pp.d1_Style or '').split('|')] if pp.d1_Style else []
+        styles = (raw_styles + [None] * len(y_plot_list))[:len(y_plot_list)]
+        raw_keys = [c.strip() for c in (pp.d1_Key or '').split('|')] if pp.d1_Key else []
+        key_labels = (raw_keys + [None] * len(y_plot_list))[:len(y_plot_list)]
+
+        if dtest or gtest:
             if verbose:
-                print(f'Generating plot {irow+2} ' + pltdir + pp.Plot_Filename + '...')
-
+                print(f"Generating plot {csv_rownum} {pltdir}{pp.Plot_Filename}...")
             if close_figs:
                 plt.close('all')
-
-            # read data from exp file
-            # set header to the row where column names are stored (Python is 0 based)
-            E = pd.read_csv(expdir+pp.d1_Filename, header=int(pp.d1_Col_Name_Row-1), sep=',', engine='python', quotechar='"')
-            E.columns = E.columns.str.strip()  # <-- Strip whitespace from headers
-
-            start_idx = int(pp.d1_Data_Row - pp.d1_Col_Name_Row - 1)
-            x, col_names = get_data(E, pp.d1_Ind_Col_Name, start_idx)
-            y, col_names = get_data(E, pp.d1_Dep_Col_Name, start_idx)
-
-            if pp.d1_Style:
-                raw_styles = [c.strip() for c in pp.d1_Style.split('|')]
-            else:
-                raw_styles = []
-            styles = (raw_styles + [None] * len(col_names))[:len(col_names)]
-
-            if pp.d1_Key:
-                raw_keys = [c.strip() for c in pp.d1_Key.split('|')]
-            else:
-                raw_keys = []
-            # Pad or truncate to match col_names
-            key_labels = (raw_keys + [None] * len(col_names))[:len(col_names)]
-
-            for i, label in enumerate(col_names):
-                if i==0:
-                    # plot the exp data
-                    f = plot_to_fig(x_data=x, y_data=y[:, i],
-                        data_label=key_labels[i],
-                        x_label=pp.Ind_Title,
-                        y_label=pp.Dep_Title,
-                        marker_style=styles[i],
-                        x_min=pp.Min_Ind,x_max=pp.Max_Ind,
-                        y_min=pp.Min_Dep,y_max=pp.Max_Dep,
-                        legend_location=matlab_legend_to_matplotlib(pp.Key_Position)
-                        )
-                elif i>0:
-                    f = plot_to_fig(x_data=x, y_data=y[:, i],
-                        figure_handle=f,
-                        data_label=key_labels[i],
-                        x_label=pp.Ind_Title,
-                        y_label=pp.Dep_Title,
-                        marker_style=styles[i],
-                        x_min=pp.Min_Ind,x_max=pp.Max_Ind,
-                        y_min=pp.Min_Dep,y_max=pp.Max_Dep,
-                        legend_location=matlab_legend_to_matplotlib(pp.Key_Position)
-                        )
-
-            # plt.figure(f.number) # make figure current
-            # plt.show()
-        else:
+            first_plot = True
+        elif ftest:
+            if verbose:
+                print(f"Generating plot {csv_rownum} {pltdir}{pp.Plot_Filename}...")
             f = f_Last
+            first_plot = False
+        else:
+            continue
 
-            if pp.d1_Key!=d1_Key_Last:
+        # --- Styles and keys (EXP d1) ---
+        d1_raw_styles = [c.strip() for c in (pp.d1_Style or '').split('|')] if pp.d1_Style else []
+        d1_styles = (d1_raw_styles + [None] * len(y_plot_list))[:len(y_plot_list)]
+        d1_raw_keys = [c.strip() for c in (pp.d1_Key or '').split('|')] if pp.d1_Key else []
+        d1_key_labels = (d1_raw_keys + [None] * len(y_plot_list))[:len(y_plot_list)]
 
-                # read data from exp file
-                # set header to the row where column names are stored (Python is 0 based)
-                E = pd.read_csv(expdir+pp.d1_Filename, header=int(pp.d1_Col_Name_Row-1), sep=',', engine='python', quotechar='"')
-                E.columns = E.columns.str.strip()  # <-- Strip whitespace from headers
-                start_idx = int(pp.d1_Data_Row - pp.d1_Col_Name_Row - 1)
-                x, col_names = get_data(E, pp.d1_Ind_Col_Name, start_idx)
-                y, col_names = get_data(E, pp.d1_Dep_Col_Name, start_idx)
+        # --- Plot Exp curves ---
+        for i, (x_i, y_i) in enumerate(zip(x_plot_list, y_plot_list)):
+            f = plot_to_fig(
+                x_data=y_i if flip_axis else x_i,
+                y_data=x_i if flip_axis else y_i,
+                figure_handle=None if (first_plot and i == 0) else f,
+                data_label=d1_key_labels[i],
+                x_label=pp.Dep_Title if flip_axis else pp.Ind_Title,
+                y_label=pp.Ind_Title if flip_axis else pp.Dep_Title,
+                marker_style=d1_styles[i],
+                x_min=pp.Min_Dep if flip_axis else pp.Min_Ind,
+                x_max=pp.Max_Dep if flip_axis else pp.Max_Ind,
+                y_min=pp.Min_Ind if flip_axis else pp.Min_Dep,
+                y_max=pp.Max_Ind if flip_axis else pp.Max_Dep,
+                legend_location=matlab_legend_to_matplotlib(pp.Key_Position),
+                legend_expand=pp.Paper_Width_Factor,
+                plot_type=plot_type,
+                plot_title=pp.Plot_Title,
+            )
 
-                # plot the exp data
-                f = plot_to_fig(x_data=x, y_data=y,
-                    figure_handle=f,
-                    data_label=pp.d1_Key,
-                    x_label=pp.Ind_Title,
-                    y_label=pp.Dep_Title,
-                    marker_style=pp.d1_Style,
-                    x_min=pp.Min_Ind,x_max=pp.Max_Ind,
-                    y_min=pp.Min_Dep,y_max=pp.Max_Dep,
-                    legend_location=matlab_legend_to_matplotlib(pp.Key_Position)
+        # --- Save measured (experimental) ---
+        if not gtest:
+            try:
+                metric_raw = str(pp.Metric or '').strip()
+                metric_str = metric_raw.lower()
+                # For 'all_2_3', treat EXP metric as 'all' (per-column) here.
+                metric_for_exp_block = "all" if metric_str.startswith("all") else metric_raw
+
+                vals_meas_list = []
+                qty_meas_list = []
+                if y.ndim == 2 and x.ndim == 2 and y.shape[1] == x.shape[1]:
+                    for j in range(y.shape[1]):
+                        xj = np.ravel(x[:, j])
+                        yj = np.ravel(y[:, j])
+                        mask = np.isfinite(xj) & np.isfinite(yj)
+                        xj, yj = xj[mask], yj[mask]
+                        if len(xj) > 0 and len(yj) > 0:
+                            vals_meas, qty_meas, _ = _compute_metrics_block(
+                                x=xj, Y=yj, metric=metric_for_exp_block,
+                                initial_value=float(pp.d1_Initial_Value or 0.0),
+                                comp_start=float(pp.d1_Comp_Start or np.nan),
+                                comp_end=float(pp.d1_Comp_End or np.nan),
+                                dep_comp_start=float(pp.d1_Dep_Comp_Start or np.nan),
+                                dep_comp_end=float(pp.d1_Dep_Comp_End or np.nan),
+                                variant_side="d1",
+                            )
+                            vals_meas_list.append(vals_meas)
+                            qty_meas_list.append(qty_meas)
+                else:
+                    vals_meas, qty_meas, _ = _compute_metrics_block(
+                        x=x, Y=y, metric=metric_for_exp_block,
+                        initial_value=float(pp.d1_Initial_Value or 0.0),
+                        comp_start=float(pp.d1_Comp_Start or np.nan),
+                        comp_end=float(pp.d1_Comp_End or np.nan),
+                        dep_comp_start=float(pp.d1_Dep_Comp_Start or np.nan),
+                        dep_comp_end=float(pp.d1_Dep_Comp_End or np.nan),
+                        variant_side="d1",
                     )
+                    vals_meas_list = [vals_meas]
+                    qty_meas_list = [qty_meas]
 
-        # --- Save measured (experimental) metric using the numeric arrays from get_data ---
-        try:
-            if not gtest:
-                Save_Measured_Metric[-1] = compute_metric(y, pp.Metric, x, pp.d1_Initial_Value)
-                Save_Measured_Quantity[-1] = col_names
-        except Exception as e:
-            print(f"[dataplot] Warning: measured metric failed for {pp.Dataname}: {e}")
+                # Replace placeholder "curve#" labels with actual dependent column name
+                qty_label = str(pp.d1_Dep_Col_Name).strip() or "Unknown"
 
+                Save_Measured_Metric[-1] = np.array(vals_meas_list, dtype=object)
+                Save_Measured_Quantity[-1] = np.array([qty_label] * len(vals_meas_list), dtype=object)
+                Save_csv_rownum[-1] = csv_rownum
 
-        # get the model results
-        M = pd.read_csv(cmpdir+pp.d2_Filename, header=int(pp.d2_Col_Name_Row-1), sep=',', engine='python', quotechar='"')
-        M.columns = M.columns.str.strip()  # <-- Strip whitespace from headers
+            except Exception as e:
+                print(f"[dataplot] Error computing measured metric for {pp.Dataname}: {e}")
+                Save_Measured_Metric[-1] = np.array([])
+                Save_Measured_Quantity[-1] = []
+                Save_Measured_Quantity[-1] = []
+
+        # ---------------------- LOAD MODEL ----------------------
+        M = read_csv_cached(cmpdir + pp.d2_Filename,
+                            header=int(pp.d2_Col_Name_Row - 1),
+                            sep=',', engine='python', quotechar='"',
+                            skip_blank_lines=True).dropna(how='all')
+        M = M.loc[:M.dropna(how='all').last_valid_index()]
+        M.columns = M.columns.str.strip()
         start_idx = int(pp.d2_Data_Row - pp.d2_Col_Name_Row - 1)
 
-        x, col_names = get_data(M, pp.d2_Ind_Col_Name, start_idx)
-        y, col_names = get_data(M, pp.d2_Dep_Col_Name, start_idx)
-
         version_string = revision
-        if (pp.VerStr_Filename):
-            file1 = open(cmpdir+pp.VerStr_Filename,"r")
-            Lines = file1.readlines()
-            version_string = Lines[0].strip()
-            file1.close()
+        if pp.VerStr_Filename:
+            try:
+                with open(cmpdir + pp.VerStr_Filename, "r") as fver:
+                    Lines = fver.readlines()
+                    if Lines:
+                        version_string = Lines[0].strip()
+            except Exception as e:
+                print(f"[dataplot] Warning: could not read version string: {e}")
 
-        if pp.d2_Style:
-            raw_styles = [c.strip() for c in pp.d2_Style.split('|')]
+        x, _ = get_data(M, pp.d2_Ind_Col_Name, start_idx)
+        y, _ = get_data(M, pp.d2_Dep_Col_Name, start_idx)
+
+        x_scaled = np.asarray(x, dtype=float).copy()
+        y_scaled = np.asarray(y, dtype=float).copy()
+
+        # ------------------------------------------------------------
+        # Apply d2_Start / d2_End to PLOTTED DATA (model curves)
+        # ------------------------------------------------------------
+        if pp.d2_Start is not None or pp.d2_End is not None:
+            x0 = float(pp.d2_Start) if pp.d2_Start is not None else -np.inf
+            x1 = float(pp.d2_End)   if pp.d2_End   is not None else  np.inf
+
+            mask = (x_scaled >= x0) & (x_scaled <= x1)
+
+            # Preserve shape for multi-column data
+            if x_scaled.ndim == 2:
+                for j in range(x_scaled.shape[1]):
+                    mj = mask[:, j]
+                    x_scaled[:, j] = np.where(mj, x_scaled[:, j], np.nan)
+                    y_scaled[:, j] = np.where(mj, y_scaled[:, j], np.nan)
+            else:
+                x_scaled = np.where(mask, x_scaled, np.nan)
+                y_scaled = np.where(mask, y_scaled, np.nan)
+
+        x_scale = float(pp.Scale_Ind or 1.0)
+        y_scale = float(pp.Scale_Dep or 1.0)
+        x_scaled = x_scaled / x_scale
+        y_scaled = y_scaled / y_scale
+
+        if x_scaled.ndim == 2 and y_scaled.ndim == 2 and x_scaled.shape[1] == y_scaled.shape[1]:
+            x_plot_list = [x_scaled[:, i] for i in range(x_scaled.shape[1])]
+            y_plot_list = [y_scaled[:, i] for i in range(y_scaled.shape[1])]
+        elif y_scaled.ndim == 2 and y_scaled.shape[1] > 1:
+            x_plot_list = [x_scaled for _ in range(y_scaled.shape[1])]
+            y_plot_list = [y_scaled[:, i] for i in range(y_scaled.shape[1])]
         else:
-            raw_styles = []
-        styles = (raw_styles + [None] * len(col_names))[:len(col_names)]
+            x_plot_list = [np.ravel(x_scaled)]
+            y_plot_list = [np.ravel(y_scaled)]
 
-        if pp.d2_Key:
-            raw_keys = [c.strip() for c in pp.d2_Key.split('|')]
-        else:
-            raw_keys = []
-        key_labels = (raw_keys + [None] * len(col_names))[:len(col_names)]
+        for xi, yi in zip(x_plot_list, y_plot_list):
+            if len(xi) != len(yi):
+                print(f"[dataplot] Pair length mismatch in {pp.Dataname}: x={len(xi)}, y={len(yi)}")
 
-        for i, label in enumerate(col_names):
-            f = plot_to_fig(x_data=x, y_data=y[:, i],
-                revision_label=version_string,
+        # --- Styles and keys (MODEL d2) ---
+        d2_raw_styles = [c.strip() for c in (pp.d2_Style or '').split('|')] if pp.d2_Style else []
+        d2_styles = (d2_raw_styles + [None] * len(y_plot_list))[:len(y_plot_list)]
+        d2_raw_keys = [c.strip() for c in (pp.d2_Key or '').split('|')] if pp.d2_Key else []
+        d2_key_labels = (d2_raw_keys + [None] * len(y_plot_list))[:len(y_plot_list)]
+
+        # --- Plot model curves ---
+        for i, (x_i, y_i) in enumerate(zip(x_plot_list, y_plot_list)):
+            f = plot_to_fig(
+                x_data=y_i if flip_axis else x_i,
+                y_data=x_i if flip_axis else y_i,
+                revision_label=version_string if dtest else None,
                 figure_handle=f,
-                x_label=pp.Ind_Title,
-                y_label=pp.Dep_Title,
-                data_label=key_labels[i],
-                line_style=styles[i],
-                x_min=pp.Min_Ind,x_max=pp.Max_Ind,
-                y_min=pp.Min_Dep,y_max=pp.Max_Dep,
-                legend_location=matlab_legend_to_matplotlib(pp.Key_Position),
-                plot_title=pp.Plot_Title
-                )
+                data_label=d2_key_labels[i],
+                line_style=d2_styles[i],
+            )
 
+        # --- Interpolated, metric-aware model logic ---
+        if not gtest:
+            try:
+                metric_raw = str(pp.Metric or '').strip()
+                metric_str = metric_raw.lower()
+                meas_list, pred_list, qty_pred_list = [], [], []
 
-        # --- Save predicted (model) metric using the numeric arrays from get_data ---
-        try:
-            if not gtest:
-                Save_Predicted_Metric[-1] = compute_metric(y, pp.Metric, x, pp.d2_Initial_Value)
-                Save_Predicted_Quantity[-1] = col_names
-        except Exception as e:
-            print(f"[dataplot] Warning: predicted metric failed for {pp.Dataname}: {e}")
+                # Local parser for stat_x_y patterns (max_2_3, mean_1_4, end_3_2)
+                def _parse_stat_xy_local(m):
+                    m = m.lower().strip()
+                    for base in ("max", "mean", "end"):
+                        pref = base + "_"
+                        if m.startswith(pref):
+                            try:
+                                a, b = m[len(pref):].split("_", 1)
+                                return base, int(a), int(b)
+                            except Exception:
+                                pass
+                    return m, None, None
 
+                base_stat, idx_first_stat, idx_second_stat = _parse_stat_xy_local(metric_str)
 
+                # Load experimental again for alignment (safe; cached)
+                E = read_csv_cached(expdir + pp.d1_Filename,
+                                    header=int(pp.d1_Col_Name_Row - 1),
+                                    sep=',', engine='python', quotechar='"',
+                                    skip_blank_lines=True).dropna(how='all')
+                E.columns = E.columns.str.strip()
+                start_idx_exp = int(pp.d1_Data_Row - pp.d1_Col_Name_Row - 1)
+                x_exp_raw, _ = get_data(E, pp.d1_Ind_Col_Name, start_idx_exp)
+                y_exp_raw, _ = get_data(E, pp.d1_Dep_Col_Name, start_idx_exp)
 
-        plt.figure(f.number) # make figure current
-        # plt.show()
+                x_mod_raw = x
+                y_mod_raw = y
 
-        # create plot directory if it does not exist
-        isDir = os.path.isdir(pltdir)
-        if not isDir:
-            os.mkdir(pltdir)
+                # --- CASE 1: stat pair metrics (max_2_3, mean_2_3, end_2_3) ---
+                if base_stat in ("max", "mean", "end") and idx_first_stat is not None:
+                    v_meas, _, _ = _compute_metrics_block(
+                        x=x_exp_raw, Y=y_exp_raw, metric=metric_raw,
+                        initial_value=float(pp.d1_Initial_Value or 0.0),
+                        comp_start=float(pp.d1_Comp_Start or np.nan),
+                        comp_end=float(pp.d1_Comp_End or np.nan),
+                        dep_comp_start=float(pp.d1_Dep_Comp_Start or np.nan),
+                        dep_comp_end=float(pp.d1_Dep_Comp_End or np.nan),
+                        variant_side="d1",
+                    )
+                    v_pred, qty_pred, _ = _compute_metrics_block(
+                        x=x_mod_raw, Y=y_mod_raw, metric=metric_raw,
+                        initial_value=float(pp.d2_Initial_Value or 0.0),
+                        comp_start=float(pp.d2_Comp_Start or np.nan),
+                        comp_end=float(pp.d2_Comp_End or np.nan),
+                        dep_comp_start=float(pp.d2_Dep_Comp_Start or np.nan),
+                        dep_comp_end=float(pp.d2_Dep_Comp_End or np.nan),
+                        variant_side="d2",
+                    )
 
+                    flat_meas = np.atleast_1d(v_meas)
+                    flat_pred = np.atleast_1d(v_pred)
+
+                    if pp.Quantity != "0":
+                        nmin = min(flat_meas.size, flat_pred.size)
+                        if nmin == 0:
+                            print(f"[dataplot] Warning: no valid data pairs for {pp.Dataname}")
+                        else:
+                            if flat_meas.size != flat_pred.size:
+                                print(f"[dataplot] Truncated unequal vectors for {pp.Dataname}: "
+                                      f"Measured={flat_meas.size}, Predicted={flat_pred.size} → {nmin}")
+                                flat_meas = flat_meas[:nmin]
+                                flat_pred = flat_pred[:nmin]
+
+                            Save_Measured_Metric[-1] = flat_meas
+                            Save_Predicted_Metric[-1] = flat_pred
+
+                            qty_label = str(pp.d2_Dep_Col_Name).strip() or "Unknown"
+                            Save_Predicted_Quantity[-1] = np.array([qty_label] * len(flat_pred), dtype=object)
+
+                    plt.figure(f.number)
+                    os.makedirs(pltdir, exist_ok=True)
+                    plt.savefig(pltdir + pp.Plot_Filename + '.pdf', backend='pdf')
+                    f_Last = f
+                    continue  # move to next config row
+
+                # --- CASE 2: "all" with explicit pairing (all_2_3) ---
+                is_all_pair = False
+                idx_first_all = idx_second_all = None
+                if metric_str.startswith("all_"):
+                    try:
+                        rest = metric_str[len("all_"):]
+                        a, b = rest.split("_", 1)
+                        idx_first_all = int(a)
+                        idx_second_all = int(b)
+                        is_all_pair = True
+                    except Exception:
+                        is_all_pair = False
+
+                # Normalize shapes to 2D (col-major semantics)
+                x_exp = np.atleast_2d(x_exp_raw)
+                y_exp = np.atleast_2d(y_exp_raw)
+                x_mod = np.atleast_2d(x_mod_raw)
+                y_mod = np.atleast_2d(y_mod_raw)
+
+                # Special "all_2_3" handling: one EXP column vs one MODEL column
+                if is_all_pair and idx_first_all is not None and idx_second_all is not None:
+                    j_e = idx_first_all - 1
+                    j_m = idx_second_all - 1
+                    if j_e < 0 or j_m < 0 or j_e >= y_exp.shape[1] or j_m >= y_mod.shape[1]:
+                        print(f"[dataplot] all-pair index out of range for {pp.Dataname}")
+                        flat_meas = np.array([])
+                        flat_pred = np.array([])
+                    else:
+                        xj_e = np.ravel(x_exp[:, j_e] if x_exp.shape[1] > 1 else x_exp)
+                        yj_e = np.ravel(y_exp[:, j_e])
+                        m_e = np.isfinite(xj_e) & np.isfinite(yj_e)
+                        xj_e, yj_e = xj_e[m_e], yj_e[m_e]
+
+                        xj_m = np.ravel(x_mod[:, j_m] if x_mod.shape[1] > 1 else x_mod)
+                        yj_m = np.ravel(y_mod[:, j_m])
+                        m_m = np.isfinite(xj_m) & np.isfinite(yj_m)
+                        xj_m, yj_m = xj_m[m_m], yj_m[m_m]
+
+                        if xj_m.size < 2 or xj_e.size == 0:
+                            flat_meas = np.array([])
+                            flat_pred = np.array([])
+                        else:
+                            yj_m_i = np.interp(xj_e, xj_m, yj_m, left=np.nan, right=np.nan)
+                            mask_pair = np.isfinite(yj_m_i) & np.isfinite(yj_e)
+                            if not np.any(mask_pair):
+                                flat_meas = np.array([])
+                                flat_pred = np.array([])
+                            else:
+                                x_use = xj_e[mask_pair]
+                                y_exp_use = yj_e[mask_pair]
+                                y_mod_use = yj_m_i[mask_pair]
+
+                                v_meas, _, _ = _compute_metrics_block(
+                                    x=x_use, Y=y_exp_use, metric="all",
+                                    initial_value=float(pp.d1_Initial_Value or 0.0),
+                                    comp_start=float(pp.d1_Comp_Start or np.nan),
+                                    comp_end=float(pp.d1_Comp_End or np.nan),
+                                    dep_comp_start=float(pp.d1_Dep_Comp_Start or np.nan),
+                                    dep_comp_end=float(pp.d1_Dep_Comp_End or np.nan),
+                                    variant_side="d1",
+                                )
+                                v_pred, qty_pred, _ = _compute_metrics_block(
+                                    x=x_use, Y=y_mod_use, metric="all",
+                                    initial_value=float(pp.d2_Initial_Value or 0.0),
+                                    comp_start=float(pp.d2_Comp_Start or np.nan),
+                                    comp_end=float(pp.d2_Comp_End or np.nan),
+                                    dep_comp_start=float(pp.d2_Dep_Comp_Start or np.nan),
+                                    dep_comp_end=float(pp.d2_Dep_Comp_End or np.nan),
+                                    variant_side="d2",
+                                )
+
+                                flat_meas = np.atleast_1d(v_meas)
+                                flat_pred = np.atleast_1d(v_pred)
+
+                    if pp.Quantity != "0":
+                        nmin = min(flat_meas.size, flat_pred.size)
+                        if nmin == 0:
+                            print(f"[dataplot] Warning: no valid data pairs for {pp.Dataname}")
+                        else:
+                            if flat_meas.size != flat_pred.size:
+                                print(f"[dataplot] Truncated unequal vectors for {pp.Dataname}: "
+                                      f"Measured={flat_meas.size}, Predicted={flat_pred.size} → {nmin}")
+                                flat_meas = flat_meas[:nmin]
+                                flat_pred = flat_pred[:nmin]
+
+                            Save_Measured_Metric[-1] = flat_meas
+                            Save_Predicted_Metric[-1] = flat_pred
+
+                            qty_label = str(pp.d2_Dep_Col_Name).strip() or "Unknown"
+                            Save_Predicted_Quantity[-1] = np.array([qty_label] * len(flat_pred), dtype=object)
+
+                    plt.figure(f.number)
+                    os.makedirs(pltdir, exist_ok=True)
+                    plt.savefig(pltdir + pp.Plot_Filename + '.pdf', backend='pdf')
+                    f_Last = f
+                    continue  # move to next config row
+
+                # --- CASE 3: general metrics (including plain 'all') ---
+                metric_for_block = "all" if metric_str.startswith("all") else metric_raw
+
+                ncols = min(y_exp.shape[1], y_mod.shape[1])
+
+                for j in range(ncols):
+                    # Cull NaNs per series keeping pairs aligned
+                    xj_e = np.ravel(x_exp[:, j] if x_exp.shape[1] > 1 else x_exp)
+                    yj_e = np.ravel(y_exp[:, j])
+                    m_e = np.isfinite(xj_e) & np.isfinite(yj_e)
+                    xj_e, yj_e = xj_e[m_e], yj_e[m_e]
+
+                    xj_m = np.ravel(x_mod[:, j] if x_mod.shape[1] > 1 else x_mod)
+                    yj_m = np.ravel(y_mod[:, j])
+                    m_m = np.isfinite(xj_m) & np.isfinite(yj_m)
+                    xj_m, yj_m = xj_m[m_m], yj_m[m_m]
+
+                    if metric_for_block == 'all':
+                        # align by interpolating model to exp x
+                        if xj_m.size < 2 or xj_e.size == 0:
+                            continue
+                        yj_m_i = np.interp(xj_e, xj_m, yj_m, left=np.nan, right=np.nan)
+                        mask_pair = np.isfinite(yj_m_i) & np.isfinite(yj_e)
+                        if not np.any(mask_pair):
+                            continue
+                        x_use = xj_e[mask_pair]
+                        y_exp_use = yj_e[mask_pair]
+                        y_mod_use = yj_m_i[mask_pair]
+                        # compute both on the same x grid
+                        v_meas, _, _ = _compute_metrics_block(
+                            x=x_use, Y=y_exp_use, metric="all",
+                            initial_value=float(pp.d1_Initial_Value or 0.0),
+                            comp_start=float(pp.d1_Comp_Start or np.nan),
+                            comp_end=float(pp.d1_Comp_End or np.nan),
+                            dep_comp_start=float(pp.d1_Dep_Comp_Start or np.nan),
+                            dep_comp_end=float(pp.d1_Dep_Comp_End or np.nan),
+                            variant_side="d1",
+                        )
+                        v_pred, qty_pred, _ = _compute_metrics_block(
+                            x=x_use, Y=y_mod_use, metric="all",
+                            initial_value=float(pp.d2_Initial_Value or 0.0),
+                            comp_start=float(pp.d2_Comp_Start or np.nan),
+                            comp_end=float(pp.d2_Comp_End or np.nan),
+                            dep_comp_start=float(pp.d2_Dep_Comp_Start or np.nan),
+                            dep_comp_end=float(pp.d2_Dep_Comp_End or np.nan),
+                            variant_side="d2",
+                        )
+                    else:
+                        # aggregate metrics: NO interpolation; operate independently
+                        if yj_e.size == 0 or yj_m.size == 0:
+                            continue
+                        v_meas, _, _ = _compute_metrics_block(
+                            x=xj_e, Y=yj_e, metric=metric_for_block,
+                            initial_value=float(pp.d1_Initial_Value or 0.0),
+                            comp_start=float(pp.d1_Comp_Start or np.nan),
+                            comp_end=float(pp.d1_Comp_End or np.nan),
+                            dep_comp_start=float(pp.d1_Dep_Comp_Start or np.nan),
+                            dep_comp_end=float(pp.d1_Dep_Comp_End or np.nan),
+                            variant_side="d1",
+                        )
+                        v_pred, qty_pred, _ = _compute_metrics_block(
+                            x=xj_m, Y=yj_m, metric=metric_for_block,
+                            initial_value=float(pp.d2_Initial_Value or 0.0),
+                            comp_start=float(pp.d2_Comp_Start or np.nan),
+                            comp_end=float(pp.d2_Comp_End or np.nan),
+                            dep_comp_start=float(pp.d2_Dep_Comp_Start or np.nan),
+                            dep_comp_end=float(pp.d2_Dep_Comp_End or np.nan),
+                            variant_side="d2",
+                        )
+
+                    meas_list.append(np.atleast_1d(v_meas))
+                    pred_list.append(np.atleast_1d(v_pred))
+                    qty_pred_list.append(qty_pred)
+
+                flat_meas = np.concatenate(meas_list) if meas_list else np.array([])
+                flat_pred = np.concatenate(pred_list) if pred_list else np.array([])
+
+                if pp.Quantity != "0":
+                    nmin = min(flat_meas.size, flat_pred.size)
+                    if nmin == 0:
+                        print(f"[dataplot] Warning: no valid data pairs for {pp.Dataname}")
+                    else:
+                        if flat_meas.size != flat_pred.size :
+                            print(f"[dataplot] Truncated unequal vectors for {pp.Dataname}: "
+                                  f"Measured={flat_meas.size}, Predicted={flat_pred.size} → {nmin}")
+                            # Truncate both sides to maintain one-to-one correspondence
+                            flat_meas = flat_meas[:nmin]
+                            flat_pred = flat_pred[:nmin]
+
+                        # Save truncated paired arrays
+                        Save_Measured_Metric[-1] = flat_meas
+                        Save_Predicted_Metric[-1] = flat_pred
+
+                        qty_label = str(pp.d2_Dep_Col_Name).strip() or "Unknown"
+                        Save_Predicted_Quantity[-1] = np.array([qty_label] * len(flat_pred), dtype=object)
+
+            except Exception as e:
+                print(f"[dataplot] Error computing predicted metric for {pp.Dataname}: {e}")
+                Save_Predicted_Metric[-1] = np.array([])
+                Save_Predicted_Quantity[-1] = []
+
+        plt.figure(f.number)
+        os.makedirs(pltdir, exist_ok=True)
         plt.savefig(pltdir + pp.Plot_Filename + '.pdf', backend='pdf')
-
-        Plot_Filename_Last = pp.Plot_Filename
-        d1_Key_Last = pp.d1_Key
         f_Last = f
 
-        # except:
-        #     print("Error in row {whichrow}, skipping case...".format(whichrow=irow+1))
-        #     continue
+    saved_data = [
+        Save_Quantity, Save_Group_Style, Save_Fill_Color, Save_Group_Key_Label,
+        Save_Measured_Metric, Save_Predicted_Metric, Save_Dataname, Save_Plot_Filename,
+        Save_Dep_Title, Save_Error_Tolerance, Save_Metric_Type,
+        Save_Measured_Quantity, Save_Predicted_Quantity, Save_csv_rownum,
+    ]
 
-    # --- MATLAB-compatible output scaffolding for scatplot interface ---
-    try:
-        saved_data = [
-            Save_Quantity,
-            Save_Group_Style,
-            Save_Fill_Color,
-            Save_Group_Key_Label,
-            Save_Measured_Metric,
-            Save_Predicted_Metric,
-            Save_Dataname,
-            Save_Plot_Filename,
-            Save_Dep_Title,
-            Save_Error_Tolerance,
-            Save_Metric_Type,
-            Save_Measured_Quantity,
-            Save_Predicted_Quantity,
-        ]
-    except Exception as e:
-        print(f"[dataplot] Error assembling saved_data: {e}")
-        saved_data = []
+    for i, (m, p, name, qty) in enumerate(zip(
+        Save_Measured_Metric, Save_Predicted_Metric, Save_Dataname, Save_Quantity
+    )):
+        len_m = np.size(m) if isinstance(m, np.ndarray) else 0
+        len_p = np.size(p) if isinstance(p, np.ndarray) else 0
+        csv_rownum = drange[i] if i < len(drange) else "?"
+        if len_m != len_p and qty != "0":
+            print(f"[dataplot] Length mismatch at CSV row {csv_rownum}: {name} | {qty} | Measured={len_m}, Predicted={len_p}")
 
     print("[dataplot] returning saved_data and drange")
     return saved_data, drange
 
-
-def compute_metric(data, metric_type, x=None, initial_value=0.0):
-    import numpy as np
-    try:
-        if metric_type == 'max':
-            return np.nanmax(data) - initial_value
-        elif metric_type == 'min':
-            return initial_value - np.nanmin(data)
-        elif metric_type == 'maxabs':
-            return np.nanmax(np.abs(data - initial_value))
-        elif metric_type == 'mean':
-            return abs(np.nanmean(data) - initial_value)
-        elif metric_type == 'area' and x is not None:
-            return np.trapz(data, x) - initial_value
-        elif metric_type == 'all':
-            return data - initial_value
-        else:
-            return np.nanmean(data) - initial_value  # default
-    except Exception:
-        return np.nan
 
 
 def get_data(E, spec, start_idx):
@@ -450,6 +937,77 @@ def get_data(E, spec, start_idx):
     return y, col_names
 
 
+def configure_fds_fonts(**kwargs):
+    import matplotlib.pyplot as plt
+    import platform
+
+    use_tex = kwargs.get('usetex', False)
+    system  = platform.system()
+
+    # OS-dependent serif stack
+    if system == "Linux":
+        primary_serif = "Nimbus Roman"
+        serif_list = [
+            "Nimbus Roman",
+            "Times",
+            "Times New Roman",
+            "serif",
+        ]
+    else:
+        primary_serif = "Times"
+        serif_list = [
+            "Times",
+            "Times New Roman",
+            "Nimbus Roman",
+            "serif",
+        ]
+
+    # ------------------------------------------------------------
+    # Core default config (applies to BOTH branches)
+    # ------------------------------------------------------------
+    rc = {
+        "pdf.use14corefonts": True,        # use Base-14 when possible
+        "text.usetex": use_tex,            # route text through TeX or not
+
+        "font.family": "serif",
+        "font.serif": serif_list,
+        "font.sans-serif": serif_list,
+
+        "axes.unicode_minus": False,
+        "pdf.compression": 9,
+    }
+
+    # ------------------------------------------------------------
+    # Branch A: NON-TeX Mode  (usetex=False)
+    # Use mathtext for math, STIX for math glyphs
+    # Keep Times/Nimbus for normal text
+    # Very small PDFs
+    # ------------------------------------------------------------
+    if not use_tex:
+        rc.update({
+            "mathtext.fontset": "stix",
+            "mathtext.default": "it",    # italic math by default
+        })
+
+    # ------------------------------------------------------------
+    # Branch B: Full TeX rendering  (usetex=True)
+    #   - Times for body
+    #   - newtxtext/newtxmath to Times-ify math
+    #   - Disable STIX mathtext completely
+    # ------------------------------------------------------------
+    else:
+        rc.update({
+            "mathtext.fontset": "cm",     # or "custom" — anything NOT stix
+            "mathtext.default": "rm",     # don't auto-italic mathtext in TeX mode
+            "text.latex.preamble": r"""
+                \usepackage{newtxtext}
+                \usepackage{newtxmath}
+            """,
+        })
+
+    plt.rcParams.update(rc)
+
+
 def plot_to_fig(x_data,y_data,**kwargs):
     """
     Create a simple x,y plot and return the fig handle
@@ -460,13 +1018,31 @@ def plot_to_fig(x_data,y_data,**kwargs):
     # for key, value in kwargs.items():
     #     print ("%s == %s" %(key, value))
 
-    plot_style = get_plot_style("fds")
-    plt.rcParams["font.family"] = plot_style["Font_Name"]
-    plt.rcParams["font.size"] = plot_style["Label_Font_Size"]
-    # print(plot_style)
+    import matplotlib.pyplot as plt
+    import matplotlib.ticker as ticker
 
-    plt.rcParams['text.usetex'] = True # supports latex math (set per plot below)
-    plt.rcParams["pdf.use14corefonts"] = True # forces matplotlib to write native pdf fonts rather than embed
+    plot_style = get_plot_style("fds")
+
+    # plt.rcParams.update({
+    #     "pdf.use14corefonts": True,
+    #     "text.usetex": False,
+
+    #     # Text and math in Times New Roman
+    #     "font.family": "serif",
+    #     "font.serif": ["Times", "Times New Roman"],
+
+    #     "mathtext.fontset": "custom",
+    #     "mathtext.rm": "Times",
+    #     "mathtext.it": "Times New Roman:italic",
+    #     "mathtext.bf": "Times:bold",
+    #     "mathtext.cal": "Times New Roman:italic",
+    #     "mathtext.tt": "Courier New",
+    #     "mathtext.default": "it",
+
+    #     "axes.unicode_minus": False,
+    #     "pdf.compression": 9,
+    # })
+
     import logging
     # Suppress just the 'findfont' warnings from matplotlib's font manager
     logging.getLogger('matplotlib.font_manager').setLevel(logging.ERROR)
@@ -483,13 +1059,11 @@ def plot_to_fig(x_data,y_data,**kwargs):
     default_legend_location = 'best'
     default_legend_framealpha = 1
     default_markevery = 1
+    detault_nticks = 6
     markerfacecolor = None
     markeredgecolor = 'black'
-    markeredgewidth = 1
     marker = None
-    markersize = 5
     linestyle = '-'
-    linewidth = 1
     color = 'black'
     ###############################
 
@@ -501,22 +1075,63 @@ def plot_to_fig(x_data,y_data,**kwargs):
     # if figure handle is passed, append to current figure, else generate a new figure
     if kwargs.get('figure_handle'):
         fig = kwargs.get('figure_handle')
+
         if fig.axes:
             ax = fig.axes[0]
         else:
-            # Ensure we have at least one axes
             ax = fig.add_subplot(111)
+
         plt.figure(fig.number)
         using_existing_figure = True
+
+        # ---- restore original usetex for this figure ----
+        use_tex = getattr(fig, "_fds_usetex", False)
+        plt.rcParams["text.usetex"] = use_tex
+
     else:
         fig = plt.figure(figsize=figure_size)
         using_existing_figure = False
-        # Convert to fractions of the figure size:
+
+        # Take usetex from kwargs, default to False
+        use_tex = kwargs.get('usetex', False)
+
+        # ---- apply font settings before any text is drawn ----
+        configure_fds_fonts(usetex=use_tex)
+
+        # ---- record the choice on the figure for later calls ----
+        fig._fds_usetex = use_tex
+
+        # Create axes
         ax_w = plot_size[0] / figure_size[0]
         ax_h = plot_size[1] / figure_size[1]
         left   = plot_origin[0] / figure_size[0]
         bottom = plot_origin[1] / figure_size[1]
         ax = fig.add_axes([left, bottom, ax_w, ax_h])
+
+    # widen paper if legend is outside, keeping axes fixed in physical size
+    if (kwargs.get('legend_location') == 'outside') and (not using_existing_figure):
+        legend_expand = kwargs.get('legend_expand', 1.25)
+        old_size = fig.get_size_inches()
+
+        # Compute current axes rectangle in *inches*
+        bbox = ax.get_position()
+        ax_left_in = bbox.x0 * old_size[0]
+        ax_bottom_in = bbox.y0 * old_size[1]
+        ax_w_in = bbox.width * old_size[0]
+        ax_h_in = bbox.height * old_size[1]
+
+        # Widen the figure canvas
+        new_width = old_size[0] * legend_expand
+        fig.set_size_inches(new_width, old_size[1])
+
+        # Recompute normalized coordinates to keep the axes fixed in size and location
+        left_new = ax_left_in / new_width
+        bottom_new = ax_bottom_in / old_size[1]
+        ax_w_new = ax_w_in / new_width
+        ax_h_new = ax_h_in / old_size[1]
+
+        ax.set_position([left_new, bottom_new, ax_w_new, ax_h_new])
+
 
     # select plot type
     plot_type=kwargs.get('plot_type','linear')
@@ -534,16 +1149,50 @@ def plot_to_fig(x_data,y_data,**kwargs):
 
     error_fill_color = kwargs.get('error_fill_color',None)
 
+    # adjust sizes if requested
+    linewidth = kwargs.get('linewidth',1)
+    markeredgewidth = kwargs.get('markeredgewidth',1)
+    markersize = kwargs.get('markersize',5)
+
+    # adjust ticks if required
+    xnumticks = kwargs.get('xnumticks',None)
+    ynumticks = kwargs.get('ynumticks',None)
+    xticks = kwargs.get('xticks',None)
+    yticks = kwargs.get('yticks',None)
+
     # other plot parameters
     markevery = kwargs.get('data_markevery',default_markevery)
     legend_location = kwargs.get('legend_location',default_legend_location)
     legend_framealpha = kwargs.get('legend_framealpha',default_legend_framealpha)
+
+    # set dashes to default, or user requested
+    # This set is the matplotlib default
+    if linestyle == '': dashes = (None, None); linewidth = 0;
+    if linestyle == '-': dashes = (None, None)
+    if linestyle == '--': dashes = kwargs.get('line_dashes',(6, 6))
+    if linestyle == '-.': dashes = kwargs.get('line_dashes',(6, 3, 1, 3))
+    if linestyle == ':': dashes = kwargs.get('line_dashes',(1, 3))
 
     data_label = kwargs.get('data_label',None)
 
     # trap any data_labels set to blank (old matlab convention)
     if isinstance(data_label, str) and data_label.lower() == 'blank':
         data_label = None
+
+    # ------------------------------------------------------------------
+    # PRE-PATCH FOR LOG AXES — PREVENTS log(0) WARNINGS
+    # ------------------------------------------------------------------
+    xmin = kwargs.get('x_min')
+    xmax = kwargs.get('x_max')
+    ymin = kwargs.get('y_min')
+    ymax = kwargs.get('y_max')
+
+    if plot_type in ('loglog', 'semilogx', 'semilogy'):
+        eps = 1e-12
+        if xmin is not None and xmin <= 0: xmin = eps
+        if ymin is not None and ymin <= 0: ymin = eps
+        if xmin is not None and xmax is not None: ax.set_xlim(xmin, xmax)
+        if ymin is not None and ymax is not None: ax.set_ylim(ymin, ymax)
 
     # generate the main x,y plot
     if plot_type=='linear':
@@ -557,7 +1206,8 @@ def plot_to_fig(x_data,y_data,**kwargs):
             markersize=markersize,
             linestyle=linestyle,
             linewidth=linewidth,
-            color=color)
+            color=color,
+            dashes=dashes)
 
     if plot_type=='loglog':
         ax.loglog(x_data,y_data,
@@ -570,7 +1220,8 @@ def plot_to_fig(x_data,y_data,**kwargs):
             markersize=markersize,
             linestyle=linestyle,
             linewidth=linewidth,
-            color=color)
+            color=color,
+            dashes=dashes)
 
     if plot_type=='semilogx':
         ax.semilogx(x_data,y_data,
@@ -583,7 +1234,8 @@ def plot_to_fig(x_data,y_data,**kwargs):
             markersize=markersize,
             linestyle=linestyle,
             linewidth=linewidth,
-            color=color)
+            color=color,
+            dashes=dashes)
 
     if plot_type=='semilogy':
         ax.semilogy(x_data,y_data,
@@ -596,7 +1248,8 @@ def plot_to_fig(x_data,y_data,**kwargs):
             markersize=markersize,
             linestyle=linestyle,
             linewidth=linewidth,
-            color=color)
+            color=color,
+            dashes=dashes)
 
     # if y fill range is passed, add it to the plot
     if kwargs.get('y_error_fill_absolute') and not kwargs.get('y_error_fill_relative'):
@@ -625,6 +1278,7 @@ def plot_to_fig(x_data,y_data,**kwargs):
 
     xerr = kwargs.get('x_error', None)
     yerr = kwargs.get('y_error', None)
+    err_linewidth=kwargs.get('error_linewidth', 1)
     if xerr is not None or yerr is not None:
         ax.errorbar(
             x_data, y_data,
@@ -634,12 +1288,10 @@ def plot_to_fig(x_data,y_data,**kwargs):
             markeredgewidth=markeredgewidth,         # marker edge width
             markerfacecolor=markerfacecolor,         # make marker hollow
             markeredgecolor=color,                   # outline color
-            linestyle=linestyle,
-            linewidth=linewidth,
+            elinewidth=err_linewidth,
             capsize=kwargs.get('error_capsize', 5),  # size of caps at ends
             capthick=linewidth,
         )
-
 
     ticklabel_fontsize=kwargs.get('ticklabel_fontsize',default_ticklabel_fontsize)
     plt.setp( ax.xaxis.get_majorticklabels(), rotation=0, fontsize=ticklabel_fontsize )
@@ -652,110 +1304,142 @@ def plot_to_fig(x_data,y_data,**kwargs):
 
     legend_fontsize=kwargs.get('legend_fontsize',default_legend_fontsize)
 
-    if data_label:
-        if kwargs.get('legend_location')=='outside':
-            plt.legend(fontsize=legend_fontsize,bbox_to_anchor=(1,1),loc='upper left',framealpha=legend_framealpha)
+    # --- always get current handles and labels ---
+    handles, labels = ax.get_legend_handles_labels()
+
+    # --- case 1 or 2: creating a new figure ---
+    if not using_existing_figure:
+        # record legend display properties on the Axes
+        if legend_location == 'outside':
+            ax._legend_loc = 'center left'
+            ax._legend_bbox = (1.02, 0.5)
+            ax.figure.subplots_adjust(right=0.8)
         else:
-            # if kwargs.get('show_legend'):
-            plt.legend(fontsize=legend_fontsize,loc=legend_location,framealpha=legend_framealpha)
+            ax._legend_loc = legend_location
+            ax._legend_bbox = None
 
-    # plot title
-    if kwargs.get('plot_title'):
-        if kwargs.get('title_fontsize'):
-            title_fontsize=kwargs.get('title_fontsize')
+        ax._legend_fontsize = legend_fontsize
+        ax._legend_framealpha = legend_framealpha
+
+        # if we already have labeled data, draw legend now
+        if labels:
+            ax.legend(handles, labels,
+                      loc=ax._legend_loc,
+                      bbox_to_anchor=ax._legend_bbox,
+                      fontsize=ax._legend_fontsize,
+                      framealpha=ax._legend_framealpha)
         else:
-            title_fontsize=default_title_fontsize
+            # optionally show empty placeholder (for consistent layout)
+            ax.legend([], [],
+                      loc=ax._legend_loc,
+                      bbox_to_anchor=ax._legend_bbox,
+                      fontsize=ax._legend_fontsize,
+                      frameon=False)
 
-        plt.text(0.05, 0.95, kwargs.get('plot_title'),
-        transform=plt.gca().transAxes,
-        fontsize=title_fontsize,
-        verticalalignment='top',
-        horizontalalignment='left')
+        # plot title
+        if kwargs.get('plot_title'):
+            if kwargs.get('title_fontsize'):
+                title_fontsize=kwargs.get('title_fontsize')
+            else:
+                title_fontsize=default_title_fontsize
 
-    # set axes and tick properties
-    xmin=kwargs.get('x_min')
-    xmax=kwargs.get('x_max')
-    ymin=kwargs.get('y_min')
-    ymax=kwargs.get('y_max')
+            plt.text(0.05, 0.95, kwargs.get('plot_title'),
+            transform=plt.gca().transAxes,
+            fontsize=title_fontsize,
+            verticalalignment='top',
+            horizontalalignment='left')
 
-    ax.set_xlim(xmin,xmax)
-    ax.set_ylim(ymin,ymax)
+        # set axes and tick properties
+        xmin=kwargs.get('x_min')
+        xmax=kwargs.get('x_max')
+        ymin=kwargs.get('y_min')
+        ymax=kwargs.get('y_max')
 
-    if plot_type in ('loglog', 'semilogy'):
-        apply_global_exponent(ax, axis='y', fontsize=axeslabel_fontsize)
-    if plot_type in ('loglog', 'semilogx'):
-        apply_global_exponent(ax, axis='x', fontsize=axeslabel_fontsize)
+        ax.set_xlim(xmin,xmax)
+        ax.set_ylim(ymin,ymax)
+
+        # ------------------------------------------------------------
+        # TICK HANDLING (clean, deterministic)
+        # ------------------------------------------------------------
+
+        scale_x = ax.get_xscale()
+        scale_y = ax.get_yscale()
+
+        # -------------------------------
+        # X-axis ticks
+        # -------------------------------
+        if xticks is not None:
+            # USER EXPLICIT OVERRIDE
+            ax.set_xticks(xticks)
+            ax.xaxis.set_major_formatter(ticker.FormatStrFormatter('%g'))
+
+        elif xnumticks is not None:
+            # USER requests a number of ticks
+            if scale_x == "log":
+                ax.set_xticks(np.logspace(np.log10(xmin), np.log10(xmax), xnumticks))
+            else:
+                ax.set_xticks(np.linspace(xmin, xmax, xnumticks))
+
+        else:
+            # DEFAULT behavior
+            if scale_x == "log":
+                ax.xaxis.set_major_locator(ticker.LogLocator(base=10))
+                ax.xaxis.set_major_formatter(ticker.LogFormatterSciNotation(base=10))
+            else:
+                ax.xaxis.set_major_locator(ticker.MaxNLocator(nbins=detault_nticks, min_n_ticks=4))
+                sf = ticker.ScalarFormatter()
+                sf.set_powerlimits((-3, 4))
+                ax.xaxis.set_major_formatter(sf)
+
+        # -------------------------------
+        # Y-axis ticks
+        # -------------------------------
+        if yticks is not None:
+            # USER EXPLICIT OVERRIDE
+            ax.set_yticks(yticks)
+            ax.yaxis.set_major_formatter(ticker.FormatStrFormatter('%g'))
+
+        elif ynumticks is not None:
+            # USER requests a number of ticks
+            if scale_y == "log":
+                ax.set_yticks(np.logspace(np.log10(ymin), np.log10(ymax), ynumticks))
+            else:
+                ax.set_yticks(np.linspace(ymin, ymax, ynumticks))
+
+        else:
+            # DEFAULT behavior
+            if scale_y == "log":
+                ax.yaxis.set_major_locator(ticker.LogLocator(base=10))
+                ax.yaxis.set_major_formatter(ticker.LogFormatterSciNotation(base=10))
+            else:
+                ax.yaxis.set_major_locator(ticker.MaxNLocator(nbins=detault_nticks, min_n_ticks=4))
+                sf = ticker.ScalarFormatter()
+                sf.set_powerlimits((-3, 4))
+                ax.yaxis.set_major_formatter(sf)
+
+
+    # --- case 3: existing figure, adding more data ---
+    else:
+        loc = getattr(ax, '_legend_loc', 'best')
+        bbox = getattr(ax, '_legend_bbox', None)
+        fontsize = getattr(ax, '_legend_fontsize', legend_fontsize)
+        framealpha = getattr(ax, '_legend_framealpha', legend_framealpha)
+
+        if labels:
+            ax.legend(handles, labels,
+                      loc=loc,
+                      bbox_to_anchor=bbox,
+                      fontsize=fontsize,
+                      framealpha=framealpha)
 
     if kwargs.get('revision_label'):
         add_version_string(ax=ax, version_str=kwargs.get('revision_label'), plot_type=plot_type, font_size=version_fontsize)
 
     # fig.tight_layout() # this should not be needed if figure_size and plot_size are both specified
 
+    set_ticks_like_matlab(fig)
+
     return fig
-
-
-def apply_global_exponent(ax, axis='y', fontsize=10, minor_subs=None):
-    import numpy as np
-    from matplotlib.ticker import FuncFormatter, LogLocator
-
-    if axis == 'y':
-        ticks = ax.get_yticks()
-        axis_obj = ax.yaxis
-        lims = ax.get_ylim()
-    else:
-        ticks = ax.get_xticks()
-        axis_obj = ax.xaxis
-        lims = ax.get_xlim()
-
-    # Keep only positive finite ticks (for log axes)
-    ticks = np.array([t for t in ticks if t > 0 and np.isfinite(t)])
-    if ticks.size == 0:
-        return
-
-    # Choose representative exponent
-    exp = int(np.floor(np.log10(np.median(ticks))))
-    scale = 10.0**exp
-
-    # Major formatter: fixed-point decimals
-    def fmt(val, pos):
-        v = val / scale
-        return "{:g}".format(v)
-
-    axis_obj.set_major_formatter(FuncFormatter(fmt))
-    axis_obj.get_offset_text().set_visible(False)
-
-    # Decide what to do with minor tick labels
-    span_decades = np.log10(lims[1]) - np.log10(max(lims[0], 1e-300))
-
-    # Default subs = 2, 4, 6, 8
-    if minor_subs is None:
-        minor_subs = [2, 4, 6, 8]
-
-    if span_decades <= 1.1:  # only ~1 decade
-        axis_obj.set_minor_locator(LogLocator(base=10.0, subs=minor_subs, numticks=10))
-        axis_obj.set_minor_formatter(FuncFormatter(lambda val, pos: "{:g}".format(val/scale)))
-    else:
-        ax.tick_params(axis=axis, which='minor', labelleft=False, labelbottom=False)
-
-    # Force tick labels NOT to go through TeX
-    if axis == 'y':
-        for label in ax.get_yticklabels() + ax.get_yticklabels(minor=True):
-            label.set_usetex(False)
-    else:
-        for label in ax.get_xticklabels() + ax.get_xticklabels(minor=True):
-            label.set_usetex(False)
-
-    # Place the ×10^exp text at the axis end
-    if exp != 0:
-        if axis == 'y':
-            ax.text(0, 1.01, rf"$\times 10^{{{exp}}}$",
-                    transform=ax.transAxes,
-                    ha='left', va='bottom', fontsize=fontsize)
-        else:
-            ax.text(1.0, -0.1, rf"$\times 10^{{{exp}}}$",
-                    transform=ax.transAxes,
-                    ha='right', va='top', fontsize=fontsize)
-
 
 
 def parse_matlab_style(style):
@@ -828,6 +1512,7 @@ def get_version_string(filename):
     version_str = Lines[0].strip()
     file1.close()
     return version_str
+
 
 def add_version_string(ax, version_str, plot_type='linear', scale_x=1.00, scale_y=1.02,
                        font_name='Times', font_size=10):
@@ -912,8 +1597,8 @@ def get_plot_style(style="fds"):
             "Plot_Units": "inches",
             "Plot_Width": 5.0,
             "Plot_Height": 3.4,
-            "Plot_X": 1.2,
-            "Plot_Y": 0.8,
+            "Plot_X": 1.15,
+            "Plot_Y": 0.75,
             "Scat_Plot_Width": 4.75,
             "Scat_Plot_Height": 4.75,
             "Scat_Plot_X": 1.00,
@@ -983,120 +1668,15 @@ def get_plot_style(style="fds"):
         raise ValueError(f"Unknown style '{style}'. Please choose 'fds' or 'paper'.")
 
 
-def define_plot_parameters(C, irow):
-    import numpy as np
-    import re
-
-    class plot_parameters:
-        def __init__(self):
-            self.switch_id            = C.values[irow,C.columns.get_loc('switch_id')]
-            self.Dataname             = C.values[irow,C.columns.get_loc('Dataname')]
-            self.VerStr_Filename      = C.values[irow,C.columns.get_loc('VerStr_Filename')]
-            self.d1_Filename          = C.values[irow,C.columns.get_loc('d1_Filename')]
-            self.d1_Col_Name_Row      = C.values[irow,C.columns.get_loc('d1_Col_Name_Row')]
-            self.d1_Data_Row          = C.values[irow,C.columns.get_loc('d1_Data_Row')]
-            self.d1_Ind_Col_Name      = C.values[irow,C.columns.get_loc('d1_Ind_Col_Name')]
-            self.d1_Dep_Col_Name      = C.values[irow,C.columns.get_loc('d1_Dep_Col_Name')]
-            self.d1_Key               = C.values[irow,C.columns.get_loc('d1_Key')]
-            self.d1_Style             = C.values[irow,C.columns.get_loc('d1_Style')]
-            self.d1_Start             = C.values[irow,C.columns.get_loc('d1_Start')]
-            self.d1_End               = C.values[irow,C.columns.get_loc('d1_End')]
-            self.d1_Tick              = C.values[irow,C.columns.get_loc('d1_Tick')]
-            self.d1_Comp_Start        = C.values[irow,C.columns.get_loc('d1_Comp_Start')]
-            self.d1_Comp_End          = C.values[irow,C.columns.get_loc('d1_Comp_End')]
-            self.d1_Dep_Comp_Start    = C.values[irow,C.columns.get_loc('d1_Dep_Comp_Start')]
-            self.d1_Dep_Comp_End      = C.values[irow,C.columns.get_loc('d1_Dep_Comp_End')]
-            self.d1_Initial_Value     = C.values[irow,C.columns.get_loc('d1_Initial_Value')]
-            self.d2_Filename          = C.values[irow,C.columns.get_loc('d2_Filename')]
-            self.d2_Col_Name_Row      = C.values[irow,C.columns.get_loc('d2_Col_Name_Row')]
-            self.d2_Data_Row          = C.values[irow,C.columns.get_loc('d2_Data_Row')]
-            self.d2_Ind_Col_Name      = C.values[irow,C.columns.get_loc('d2_Ind_Col_Name')]
-            self.d2_Dep_Col_Name      = C.values[irow,C.columns.get_loc('d2_Dep_Col_Name')]
-            self.d2_Key               = C.values[irow,C.columns.get_loc('d2_Key')]
-            self.d2_Style             = C.values[irow,C.columns.get_loc('d2_Style')]
-            self.d2_Start             = C.values[irow,C.columns.get_loc('d2_Start')]
-            self.d2_End               = C.values[irow,C.columns.get_loc('d2_End')]
-            self.d2_Tick              = C.values[irow,C.columns.get_loc('d2_Tick')]
-            self.d2_Comp_Start        = C.values[irow,C.columns.get_loc('d2_Comp_Start')]
-            self.d2_Comp_End          = C.values[irow,C.columns.get_loc('d2_Comp_End')]
-            self.d2_Dep_Comp_Start    = C.values[irow,C.columns.get_loc('d2_Dep_Comp_Start')]
-            self.d2_Dep_Comp_End      = C.values[irow,C.columns.get_loc('d2_Dep_Comp_End')]
-            self.d2_Initial_Value     = C.values[irow,C.columns.get_loc('d2_Initial_Value')]
-            self.Plot_Title           = C.values[irow,C.columns.get_loc('Plot_Title')]
-            self.Ind_Title            = C.values[irow,C.columns.get_loc('Ind_Title')]
-            self.Dep_Title            = C.values[irow,C.columns.get_loc('Dep_Title')]
-            self.Min_Ind              = C.values[irow,C.columns.get_loc('Min_Ind')]
-            self.Max_Ind              = C.values[irow,C.columns.get_loc('Max_Ind')]
-            self.Scale_Ind            = C.values[irow,C.columns.get_loc('Scale_Ind')]
-            self.Min_Dep              = C.values[irow,C.columns.get_loc('Min_Dep')]
-            self.Max_Dep              = C.values[irow,C.columns.get_loc('Max_Dep')]
-            self.Scale_Dep            = C.values[irow,C.columns.get_loc('Scale_Dep')]
-            self.Flip_Axis            = C.values[irow,C.columns.get_loc('Flip_Axis')]
-            self.Title_Position       = C.values[irow,C.columns.get_loc('Title_Position')]
-            self.Key_Position         = C.values[irow,C.columns.get_loc('Key_Position')]
-            self.Legend_XYWidthHeight = C.values[irow,C.columns.get_loc('Legend_XYWidthHeight')]
-            self.Paper_Width_Factor   = C.values[irow,C.columns.get_loc('Paper_Width_Factor')]
-            self.Plot_Type            = C.values[irow,C.columns.get_loc('Plot_Type')]
-            self.Plot_Filename        = C.values[irow,C.columns.get_loc('Plot_Filename')]
-            self.Quantity             = C.values[irow,C.columns.get_loc('Quantity')]
-            self.Metric               = C.values[irow,C.columns.get_loc('Metric')]
-            self.Error_Tolerance      = C.values[irow,C.columns.get_loc('Error_Tolerance')]
-            self.Group_Key_Label      = C.values[irow,C.columns.get_loc('Group_Key_Label')]
-            self.Group_Style          = C.values[irow,C.columns.get_loc('Group_Style')]
-            self.Fill_Color           = C.values[irow,C.columns.get_loc('Fill_Color')]
-            self.Font_Interpreter     = C.values[irow,C.columns.get_loc('Font_Interpreter')]
-
-        def __repr__(self):
-            return str(self.__dict__)
-
-    inst = plot_parameters()
-
-    specials = {
-        "&": r"\&", "%": r"\%", "_": r"\_", "#": r"\#",
-        "$": r"\$", "{": r"\{", "}": r"\}", "^": r"\^{}", "~": r"\~{}",
-    }
-
-    def sanitize(text: str) -> str:
-        parts = re.split(r"(\$.*?\$)", text)
-        sanitized = []
-        for part in parts:
-            if part.startswith("$") and part.endswith("$"):
-                sanitized.append(part)  # math untouched
-            else:
-                s = part
-                for k, v in specials.items():
-                    s = s.replace(k, v)
-                sanitized.append(s)
-        return "".join(sanitized)
-
-    def safe_strip(val):
-        if isinstance(val, str):
-            return val.strip()
-        return ""  # or return val if you prefer to keep None
-
-    # Explicit sanitization of only the human-facing fields
-    inst.Plot_Title      = sanitize(safe_strip(inst.Plot_Title))
-    inst.Ind_Title       = sanitize(safe_strip(inst.Ind_Title))
-    inst.Dep_Title       = sanitize(safe_strip(inst.Dep_Title))
-    inst.Quantity        = sanitize(safe_strip(inst.Quantity))
-    inst.Metric          = sanitize(safe_strip(inst.Metric))
-    inst.Group_Key_Label = sanitize(safe_strip(inst.Group_Key_Label))
-    inst.d1_Key          = sanitize(safe_strip(inst.d1_Key))
-    inst.d2_Key          = sanitize(safe_strip(inst.d2_Key))
-
-    return inst
-
-
 def matlab_legend_to_matplotlib(position):
     """
-    Convert a MATLAB legend position string to the corresponding matplotlib location string.
-
-    Parameters:
-        position (str): MATLAB-style legend position (e.g., 'northeast', 'southwestoutside')
-
-    Returns:
-        str: Matplotlib-compatible legend location (e.g., 'upper right')
+    Convert a MATLAB legend position string to a matplotlib-compatible location.
     """
+    if not isinstance(position, str):
+        return 'best'
+
+    pos = position.strip().lower()
+
     mapping = {
         'north': 'upper center',
         'south': 'lower center',
@@ -1106,277 +1686,708 @@ def matlab_legend_to_matplotlib(position):
         'southeast': 'lower right',
         'southwest': 'lower left',
         'northwest': 'upper left',
-        'northeastoutside': 'center left',    # rough equivalent
-        'northwestoutside': 'center right',
-        'southeastoutside': 'center left',
-        'southwestoutside': 'center right',
+
+        # outside positions (MATLAB → Matplotlib approximations)
+        'eastoutside': 'outside',
+
         'best': 'best'
     }
 
-    if not isinstance(position, str):
-        return 'best'
-
-    return mapping.get(position.strip().lower(), 'best')
+    return mapping.get(pos, 'best')
 
 
-def define_qrow_variables(Q, j):
-    """
-    Define scatterplot parameters from the Scatterplot_Inputs.csv row j.
 
-    Mirrors the MATLAB 'define_qrow_variables.m' behavior and returns
-    a simple Python object with all scatterplot configuration fields.
+def define_plot_parameters(D, irow, lightweight=False):
+    import numpy as np
 
-    Parameters
-    ----------
-    Q : pandas.DataFrame
-        The scatterplot input file loaded by pandas.read_csv().
-    j : int
-        Row index (0-based).
-
-    Returns
-    -------
-    q : object
-        Object with attributes corresponding to scatterplot input fields.
-    """
-    import re
-
-    class qrow:
+    class plot_parameters:
         def __init__(self):
-            self.Scatter_Plot_Title  = Q.loc[j, "Scatter_Plot_Title"]
-            self.Ind_Title           = Q.loc[j, "Ind_Title"]
-            self.Dep_Title           = Q.loc[j, "Dep_Title"]
-            self.Plot_Min            = Q.loc[j, "Plot_Min"]
-            self.Plot_Max            = Q.loc[j, "Plot_Max"]
-            self.Title_Position      = Q.loc[j, "Title_Position"]
-            self.Key_Position        = Q.loc[j, "Key_Position"]
-            self.Paper_Width_Factor  = Q.loc[j, "Paper_Width_Factor"]
-            self.Sigma_E             = Q.loc[j, "Sigma_E"]
-            self.Weight_Data         = Q.loc[j, "Weight_Data"]
-            self.Plot_Type           = Q.loc[j, "Plot_Type"]
-            self.Plot_Filename       = Q.loc[j, "Plot_Filename"]
+            pass
 
         def __repr__(self):
             return str(self.__dict__)
 
-    q = qrow()
+    # --- FAST PATH ----------------------------------------------------------
+    if lightweight:
+        col_idx = {col: i for i, col in enumerate(D.columns)}
+        row = D.iloc[irow].values
 
-    # --- Sanitization helpers (same style as define_plot_parameters) ---
-    specials = {
-        "&": r"\&", "%": r"\%", "_": r"\_", "#": r"\#",
-        "$": r"\$", "{": r"\{", "}": r"\}", "^": r"\^{}", "~": r"\~{}",
-    }
+        def get(col, default=None):
+            idx = col_idx.get(col)
+            return row[idx] if idx is not None else default
 
-    def sanitize(text: str) -> str:
-        if not isinstance(text, str):
-            return text
-        parts = re.split(r"(\$.*?\$)", text)
-        sanitized = []
-        for part in parts:
-            if part.startswith("$") and part.endswith("$"):
-                sanitized.append(part)
-            else:
-                s = part
-                for k, v in specials.items():
-                    s = s.replace(k, v)
-                sanitized.append(s)
-        return "".join(sanitized)
+        d = plot_parameters()
 
-    def safe_strip(val):
-        if isinstance(val, str):
-            return val.strip()
-        return val
+        # Core identifiers
+        d.switch_id       = get('switch_id')
+        d.Dataname        = get('Dataname')
+        d.VerStr_Filename = get('VerStr_Filename')
+        d.Plot_Filename   = get('Plot_Filename')
+        d.Plot_Title      = get('Plot_Title')
+        d.Quantity        = get('Quantity')
+        d.Metric          = get('Metric')
+        d.Error_Tolerance = get('Error_Tolerance')
 
-    # Sanitize only human-readable fields
-    q.Scatter_Plot_Title = sanitize(safe_strip(q.Scatter_Plot_Title))
-    q.Ind_Title = sanitize(safe_strip(q.Ind_Title))
-    q.Dep_Title = sanitize(safe_strip(q.Dep_Title))
-    q.Plot_Filename = safe_strip(q.Plot_Filename)
-    q.Key_Position = safe_strip(q.Key_Position)
-    q.Plot_Type = safe_strip(q.Plot_Type)
+        # File and column info
+        d.d1_Filename       = get('d1_Filename')
+        d.d1_Col_Name_Row   = get('d1_Col_Name_Row', 1)
+        d.d1_Data_Row       = get('d1_Data_Row', 2)
+        d.d1_Ind_Col_Name   = get('d1_Ind_Col_Name')
+        d.d1_Dep_Col_Name   = get('d1_Dep_Col_Name')
+        d.d1_Key            = get('d1_Key', '')
+        d.d1_Style          = get('d1_Style', '')
+        d.d1_Start          = get('d1_Start', None)
+        d.d1_End            = get('d1_End', None)
+        d.d1_Tick           = get('d1_Tick', None)
+        d.d1_Comp_Start     = get('d1_Comp_Start', np.nan)
+        d.d1_Comp_End       = get('d1_Comp_End', np.nan)
+        d.d1_Dep_Comp_Start = get('d1_Dep_Comp_Start', np.nan)
+        d.d1_Dep_Comp_End   = get('d1_Dep_Comp_End', np.nan)
+        d.d1_Initial_Value  = get('d1_Initial_Value', 0.0)
 
-    # Parse numeric fields
-    def to_float(val):
-        try:
-            return float(val)
-        except Exception:
-            return np.nan
+        d.d2_Filename       = get('d2_Filename')
+        d.d2_Col_Name_Row   = get('d2_Col_Name_Row', 1)
+        d.d2_Data_Row       = get('d2_Data_Row', 2)
+        d.d2_Ind_Col_Name   = get('d2_Ind_Col_Name')
+        d.d2_Dep_Col_Name   = get('d2_Dep_Col_Name')
+        d.d2_Key            = get('d2_Key', '')
+        d.d2_Style          = get('d2_Style', '')
+        d.d2_Start          = get('d2_Start', None)
+        d.d2_End            = get('d2_End', None)
+        d.d2_Tick           = get('d2_Tick', None)
+        d.d2_Comp_Start     = get('d2_Comp_Start', np.nan)
+        d.d2_Comp_End       = get('d2_Comp_End', np.nan)
+        d.d2_Dep_Comp_Start = get('d2_Dep_Comp_Start', np.nan)
+        d.d2_Dep_Comp_End   = get('d2_Dep_Comp_End', np.nan)
+        d.d2_Initial_Value  = get('d2_Initial_Value', 0.0)
 
-    q.Plot_Min = to_float(q.Plot_Min)
-    q.Plot_Max = to_float(q.Plot_Max)
-    q.Paper_Width_Factor = to_float(q.Paper_Width_Factor)
-    q.Sigma_E = to_float(q.Sigma_E)
+        # Plot formatting
+        d.Ind_Title        = get('Ind_Title', '')
+        d.Dep_Title        = get('Dep_Title', '')
+        d.Min_Ind          = get('Min_Ind')
+        d.Max_Ind          = get('Max_Ind')
+        d.Min_Dep          = get('Min_Dep')
+        d.Max_Dep          = get('Max_Dep')
+        d.Scale_Ind        = get('Scale_Ind', 1.0)
+        d.Scale_Dep        = get('Scale_Dep', 1.0)
+        d.Flip_Axis        = get('Flip_Axis', '')
+        d.Plot_Type        = get('Plot_Type', 'linear')
+        d.Key_Position     = get('Key_Position', 'best')
+        d.Title_Position   = get('Title_Position', '')
+        d.Legend_XYWidthHeight = get('Legend_XYWidthHeight', '')
+        d.Paper_Width_Factor   = get('Paper_Width_Factor', 1.0)
 
-    # Parse Title_Position as [x, y] floats
-    if isinstance(q.Title_Position, str):
-        try:
-            vals = [float(x) for x in q.Title_Position.split()]
-            if len(vals) == 2:
-                q.Title_Position = vals
-            else:
-                q.Title_Position = [0.03, 0.95]
-        except Exception:
-            q.Title_Position = [0.03, 0.95]
-    else:
-        q.Title_Position = [0.03, 0.95]
+        # Grouping / style info
+        d.Group_Key_Label  = get('Group_Key_Label')
+        d.Group_Style      = get('Group_Style')
+        d.Fill_Color       = get('Fill_Color')
+        d.Font_Interpreter = get('Font_Interpreter')
 
-    # Normalize Weight_Data (yes/no → bool)
-    if isinstance(q.Weight_Data, str):
-        q.Weight_Data = q.Weight_Data.strip().lower() == "yes"
-    else:
-        q.Weight_Data = bool(q.Weight_Data)
+        # --- sanitization for human-facing strings ---
+        d.Plot_Title      = safe_strip(d.Plot_Title)
+        d.Ind_Title       = safe_strip(d.Ind_Title)
+        d.Dep_Title       = safe_strip(d.Dep_Title)
+        d.Quantity        = safe_strip(d.Quantity)
+        d.Metric          = safe_strip(d.Metric)
+        d.Group_Key_Label = safe_strip(d.Group_Key_Label)
+        d.d1_Key          = safe_strip(d.d1_Key)
+        d.d2_Key          = safe_strip(d.d2_Key)
 
-    return q
+        return d
+
+    # --- FULL PATH ----------------------------------------------------------
+    class plot_parameters_full(plot_parameters):
+        def __init__(self):
+            self.switch_id            = D.values[irow,D.columns.get_loc('switch_id')]
+            self.Dataname             = D.values[irow,D.columns.get_loc('Dataname')]
+            self.VerStr_Filename      = D.values[irow,D.columns.get_loc('VerStr_Filename')]
+            self.d1_Filename          = D.values[irow,D.columns.get_loc('d1_Filename')]
+            self.d1_Col_Name_Row      = D.values[irow,D.columns.get_loc('d1_Col_Name_Row')]
+            self.d1_Data_Row          = D.values[irow,D.columns.get_loc('d1_Data_Row')]
+            self.d1_Ind_Col_Name      = D.values[irow,D.columns.get_loc('d1_Ind_Col_Name')]
+            self.d1_Dep_Col_Name      = D.values[irow,D.columns.get_loc('d1_Dep_Col_Name')]
+            self.d1_Key               = D.values[irow,D.columns.get_loc('d1_Key')]
+            self.d1_Style             = D.values[irow,D.columns.get_loc('d1_Style')]
+            self.d1_Start             = D.values[irow,D.columns.get_loc('d1_Start')]
+            self.d1_End               = D.values[irow,D.columns.get_loc('d1_End')]
+            self.d1_Tick              = D.values[irow,D.columns.get_loc('d1_Tick')]
+            self.d1_Comp_Start        = D.values[irow,D.columns.get_loc('d1_Comp_Start')]
+            self.d1_Comp_End          = D.values[irow,D.columns.get_loc('d1_Comp_End')]
+            self.d1_Dep_Comp_Start    = D.values[irow,D.columns.get_loc('d1_Dep_Comp_Start')]
+            self.d1_Dep_Comp_End      = D.values[irow,D.columns.get_loc('d1_Dep_Comp_End')]
+            self.d1_Initial_Value     = D.values[irow,D.columns.get_loc('d1_Initial_Value')]
+            self.d2_Filename          = D.values[irow,D.columns.get_loc('d2_Filename')]
+            self.d2_Col_Name_Row      = D.values[irow,D.columns.get_loc('d2_Col_Name_Row')]
+            self.d2_Data_Row          = D.values[irow,D.columns.get_loc('d2_Data_Row')]
+            self.d2_Ind_Col_Name      = D.values[irow,D.columns.get_loc('d2_Ind_Col_Name')]
+            self.d2_Dep_Col_Name      = D.values[irow,D.columns.get_loc('d2_Dep_Col_Name')]
+            self.d2_Key               = D.values[irow,D.columns.get_loc('d2_Key')]
+            self.d2_Style             = D.values[irow,D.columns.get_loc('d2_Style')]
+            self.d2_Start             = D.values[irow,D.columns.get_loc('d2_Start')]
+            self.d2_End               = D.values[irow,D.columns.get_loc('d2_End')]
+            self.d2_Tick              = D.values[irow,D.columns.get_loc('d2_Tick')]
+            self.d2_Comp_Start        = D.values[irow,D.columns.get_loc('d2_Comp_Start')]
+            self.d2_Comp_End          = D.values[irow,D.columns.get_loc('d2_Comp_End')]
+            self.d2_Dep_Comp_Start    = D.values[irow,D.columns.get_loc('d2_Dep_Comp_Start')]
+            self.d2_Dep_Comp_End      = D.values[irow,D.columns.get_loc('d2_Dep_Comp_End')]
+            self.d2_Initial_Value     = D.values[irow,D.columns.get_loc('d2_Initial_Value')]
+            self.Plot_Title           = D.values[irow,D.columns.get_loc('Plot_Title')]
+            self.Ind_Title            = D.values[irow,D.columns.get_loc('Ind_Title')]
+            self.Dep_Title            = D.values[irow,D.columns.get_loc('Dep_Title')]
+            self.Min_Ind              = D.values[irow,D.columns.get_loc('Min_Ind')]
+            self.Max_Ind              = D.values[irow,D.columns.get_loc('Max_Ind')]
+            self.Scale_Ind            = D.values[irow,D.columns.get_loc('Scale_Ind')]
+            self.Min_Dep              = D.values[irow,D.columns.get_loc('Min_Dep')]
+            self.Max_Dep              = D.values[irow,D.columns.get_loc('Max_Dep')]
+            self.Scale_Dep            = D.values[irow,D.columns.get_loc('Scale_Dep')]
+            self.Flip_Axis            = D.values[irow,D.columns.get_loc('Flip_Axis')]
+            self.Title_Position       = D.values[irow,D.columns.get_loc('Title_Position')]
+            self.Key_Position         = D.values[irow,D.columns.get_loc('Key_Position')]
+            self.Legend_XYWidthHeight = D.values[irow,D.columns.get_loc('Legend_XYWidthHeight')]
+            self.Paper_Width_Factor   = D.values[irow,D.columns.get_loc('Paper_Width_Factor')]
+            self.Plot_Type            = D.values[irow,D.columns.get_loc('Plot_Type')]
+            self.Plot_Filename        = D.values[irow,D.columns.get_loc('Plot_Filename')]
+            self.Quantity             = D.values[irow,D.columns.get_loc('Quantity')]
+            self.Metric               = D.values[irow,D.columns.get_loc('Metric')]
+            self.Error_Tolerance      = D.values[irow,D.columns.get_loc('Error_Tolerance')]
+            self.Group_Key_Label      = D.values[irow,D.columns.get_loc('Group_Key_Label')]
+            self.Group_Style          = D.values[irow,D.columns.get_loc('Group_Style')]
+            self.Fill_Color           = D.values[irow,D.columns.get_loc('Fill_Color')]
+            self.Font_Interpreter     = D.values[irow,D.columns.get_loc('Font_Interpreter')]
+
+    d = plot_parameters_full()
+
+    # --- sanitization block (unchanged) ---
+    d.Plot_Title      = safe_strip(d.Plot_Title)
+    d.Ind_Title       = safe_strip(d.Ind_Title)
+    d.Dep_Title       = safe_strip(d.Dep_Title)
+    d.Quantity        = safe_strip(d.Quantity)
+    d.Metric          = safe_strip(d.Metric)
+    d.Group_Key_Label = safe_strip(d.Group_Key_Label)
+    d.d1_Key          = safe_strip(d.d1_Key)
+    d.d2_Key          = safe_strip(d.d2Key)
+
+    return d
+
+
+def safe_strip(val):
+    """Strip whitespace safely from strings; return empty string otherwise."""
+    return val.strip() if isinstance(val, str) else ""
 
 
 def scatplot(saved_data, drange, **kwargs):
+    """
+    Generate scatter plots and compute validation/verification statistics.
+    Faithful translation of MATLAB scatplot.m behavior:
+      - validation_statistics.tex
+      - validation_histograms.tex
+      - validation_scatterplot_output.csv
+    """
     import os
-    import pandas as pd
     import numpy as np
+    import pandas as pd
     import matplotlib.pyplot as plt
+    import fdsplotlib
 
-    # --- Inputs ---
-    manuals_dir = kwargs.get('Manuals_Dir', '')
-    scatterplot_inputs_file = kwargs.get('Scatterplot_Inputs_File', '')
-    stats_output = kwargs.get('Stats_Output', 'Validation')
-    scatterplot_dir = kwargs.get('Scatterplot_Dir', '')
-    verbose = kwargs.get('verbose', True)
+    Manuals_Dir = kwargs.get("Manuals_Dir", "")
+    Scatterplot_Inputs_File = kwargs.get("Scatterplot_Inputs_File", "")
+    Stats_Output = kwargs.get("Stats_Output", "Validation")
+    Scatterplot_Dir = kwargs.get("Scatterplot_Dir", "")
+    verbose = kwargs.get("verbose", True)
 
-    # --- Prepare paths ---
-    scatterplot_path = scatterplot_inputs_file  # use exactly what the caller passed
-    if not os.path.exists(scatterplot_path):
-        raise FileNotFoundError(f"[scatplot] Cannot find Scatterplot_Inputs_File: {scatterplot_path}")
-    
-    df = pd.read_csv(scatterplot_path, sep=',', engine='python', quotechar='"')
+    plot_style = get_plot_style("fds")
+    scat_figure_size = (plot_style["Scat_Paper_Width"],plot_style["Scat_Paper_Height"])
+    scat_plot_size = (plot_style["Scat_Plot_Width"],plot_style["Scat_Plot_Height"])
+    scat_plot_origin = (plot_style["Scat_Plot_X"],plot_style["Scat_Plot_Y"])
 
+    if not os.path.exists(Scatterplot_Inputs_File):
+        raise FileNotFoundError(f"[scatplot] Missing input file: {Scatterplot_Inputs_File}")
+    os.makedirs(Scatterplot_Dir, exist_ok=True)
+
+    # Output filenames (same logic as MATLAB)
+    if Stats_Output.lower() == "validation":
+        Statistics_Tex_Output = os.path.join(Scatterplot_Dir, "validation_statistics.tex")
+        Output_File = os.path.join(Scatterplot_Dir, "validation_scatterplot_output.csv")
+        Histogram_Tex_Output = os.path.join(Scatterplot_Dir, "validation_histograms.tex")
+    elif Stats_Output.lower() == "verification":
+        Statistics_Tex_Output = os.path.join(Scatterplot_Dir, "verification_statistics.tex")
+        Output_File = os.path.join(Scatterplot_Dir, "verification_scatterplot_output.csv")
+        Histogram_Tex_Output = os.path.join(Scatterplot_Dir, "verification_histograms.tex")
+    else:
+        Statistics_Tex_Output = os.path.join(Scatterplot_Dir, f"Scatterplot_Tables_{Stats_Output}.tex")
+        Output_File = os.path.join(Scatterplot_Dir, f"Scatterplot_Stats_{Stats_Output}.csv")
+        Histogram_Tex_Output = os.path.join(Scatterplot_Dir, f"Scatterplot_Histograms_{Stats_Output}.tex")
+
+    # --- Unpack saved_data (dataplot output) ---
+    (
+        Save_Quantity,
+        Save_Group_Style,
+        Save_Fill_Color,
+        Save_Group_Key_Label,
+        Save_Measured_Metric,
+        Save_Predicted_Metric,
+        Save_Dataname,
+        Save_Plot_Filename,
+        Save_Dep_Title,
+        Save_Error_Tolerance,
+        Save_Metric_Type,
+        Save_Measured_Quantity,
+        Save_Predicted_Quantity,
+        Save_csv_rownum
+    ) = saved_data
+
+    Q = pd.read_csv(Scatterplot_Inputs_File)
     if verbose:
-        print(f"[scatplot] Loaded {len(df)} lines from scatterplot inputs")
+        print(f"[scatplot] Loaded {len(Q)} scatterplot definitions")
 
-    # --- Unpack dataplot output ---
-    (Save_Quantity,
-     Save_Group_Style,
-     Save_Fill_Color,
-     Save_Group_Key_Label,
-     Save_Measured_Metric,
-     Save_Predicted_Metric,
-     Save_Dataname,
-     Save_Plot_Filename,
-     Save_Dep_Title,
-     Save_Error_Tolerance,
-     Save_Metric_Type,
-     Save_Measured_Quantity,
-     Save_Predicted_Quantity) = saved_data
+    Output_Histograms = []
 
-    # Ensure output directory exists
-    os.makedirs(scatterplot_dir, exist_ok=True)
+    if Stats_Output.lower() == "verification":
+        output_stats = [[
+            "Dataplot Line Number",
+            "Verification Group",
+            "Case Name",
+            "Type of Metric",
+            "Expected Quantity",
+            "Expected Value",
+            "Predicted Quantity",
+            "Predicted Value",
+            "Dependent Variable",
+            "Type of Error",
+            "Error",
+            "Error Tolerance",
+            "Within Specified Error Tolerance",
+            "Plot Filename",
+        ]]
+    else:  # validation
+        output_stats = [[
+            "Quantity",
+            "Number of Datasets",
+            "Number of Points",
+            "Sigma_Experiment",
+            "Sigma_Model",
+            "Bias",
+        ]]
 
-    # --- Loop over scatterplot CSV rows ---
-    for idx, row in df.iterrows():
-        title = row['Scatter_Plot_Title']
-        ind_title = row['Ind_Title']
-        dep_title = row['Dep_Title']
-        plot_min = float(row['Plot_Min'])
-        plot_max = float(row['Plot_Max'])
-        plot_type = row['Plot_Type'].strip().lower()
-        plot_filename = os.path.join(manuals_dir, row['Plot_Filename'] + '.pdf')
+    for _, row in Q.iterrows():
+        plt.close('all')
+        plt.clf()
+
+        Scatter_Plot_Title = row["Scatter_Plot_Title"]
+        Plot_Filename = row["Plot_Filename"]
+        Plot_Min = float(row["Plot_Min"])
+        Plot_Max = float(row["Plot_Max"])
+        Plot_Type = str(row["Plot_Type"]).strip().lower()
+
+        # --- Sigma_E only required for Validation ---
+        if Stats_Output.lower() == "validation":
+            Sigma_E_input = float(row["Sigma_E"]) if "Sigma_E" in row and not pd.isna(row["Sigma_E"]) else 0.0
+        else:
+            Sigma_E_input = 0.0
 
         if verbose:
-            print(f"[scatplot] Generating scatter plot: {title}")
+           print(f"[scatplot] Processing {Scatter_Plot_Title}")
 
-        # --- Find dataplot rows matching this title ---
-        match_indices = [i for i, q in enumerate(Save_Quantity)
-                         if title.split(',')[0].strip().lower() in str(q).lower()]
+        # Match dataplot entries
+        match_idx = [
+            i for i, q in enumerate(Save_Quantity)
+            if str(q).strip().lower() == Scatter_Plot_Title.strip().lower()
+        ]
 
-        if not match_indices:
-            print(f"[scatplot] No dataplot entries matched '{title}' — skipping.")
+        # --- Write raw scatter values CSV (pre-mask, MATLAB-faithful) ---
+        if Stats_Output.lower() != "verification":
+            if (
+                Save_Measured_Metric is not None
+                and Save_Predicted_Metric is not None
+                and len(Save_Measured_Metric) > 0
+                and len(Save_Predicted_Metric) > 0
+                and len(Save_Measured_Metric) == len(Save_Predicted_Metric)
+            ):
+                raw_csv = _write_raw_scatter_csv(
+                    Scatterplot_Dir,
+                    Scatter_Plot_Title,
+                    match_idx,
+                    Save_csv_rownum,
+                    Save_Dataname,
+                    Save_Measured_Metric,
+                    Save_Predicted_Metric,
+                )
+
+            # if verbose:
+            #     print(f"[scatplot] Wrote raw scatter CSV: {raw_csv}")
+
+        if not match_idx:
+            print(f"[scatplot] No dataplot entries for {Scatter_Plot_Title}")
             continue
 
-        # --- Collect measured/predicted data ---
-        measured_vals = []
-        predicted_vals = []
-        for i in match_indices:
-            m = np.atleast_1d(Save_Measured_Metric[i]).astype(float)
-            p = np.atleast_1d(Save_Predicted_Metric[i]).astype(float)
-            # Filter out invalids
-            mask = np.isfinite(m) & np.isfinite(p)
-            measured_vals.extend(m[mask])
-            predicted_vals.extend(p[mask])
+        # --- Split logic: Verification vs Validation ---
+        # --- VERIFICATION branch ---
+        if Stats_Output.lower() == "verification":
 
-        measured_vals = np.array(measured_vals)
-        predicted_vals = np.array(predicted_vals)
+            # Loop through each dataplot entry that matches this scatterplot
+            for idx in match_idx:
 
-        if len(measured_vals) == 0:
-            print(f"[scatplot] Warning: No valid data points for '{title}'")
-            continue
+                # --- Extract measured/predicted numeric values ---
+                mvals = np.array(Save_Measured_Metric[idx], dtype=float).flatten()
+                pvals = np.array(Save_Predicted_Metric[idx], dtype=float).flatten()
 
-        # --- Create scatter plot ---
-        plt.figure(figsize=(5,5))
-        if plot_type == 'loglog':
-            plt.loglog(measured_vals, predicted_vals, 'o', markersize=5, alpha=0.6)
-        else:
-            plt.plot(measured_vals, predicted_vals, 'o', markersize=5, alpha=0.6)
+                # Keep only finite pairs
+                mask = np.isfinite(mvals) & np.isfinite(pvals)
+                mvals = mvals[mask]
+                pvals = pvals[mask]
 
-        # 1:1 line
-        plt.plot([plot_min, plot_max], [plot_min, plot_max], 'k--', linewidth=1)
+                # --- Extract quantity labels (MATLAB behavior: pipe = multiple quantities) ---
+                def _split_pipe_list(x):
+                    """
+                    MATLAB dataplot uses '|' to separate multiple quantity labels.
+                    Convert "a|b|c" → ["a", "b", "c"] exactly.
+                    """
+                    if x is None:
+                        return [""]
 
-        plt.xlim([plot_min, plot_max])
-        plt.ylim([plot_min, plot_max])
-        plt.xlabel(ind_title)
-        plt.ylabel(dep_title)
-        plt.title(title)
-        plt.grid(True, which='both', linestyle=':')
+                    # Try to extract a single string out of an object/array
+                    try:
+                        s = str(np.ravel(np.array(x, dtype=object))[0])
+                    except Exception:
+                        s = str(x)
 
-        plt.tight_layout()
-        os.makedirs(os.path.dirname(plot_filename), exist_ok=True)
-        plt.savefig(plot_filename)
-        plt.close()
+                    # Properly split on pipes and strip whitespace
+                    return [item.strip() for item in s.split("|")]
+
+                meas_labels = _split_pipe_list(Save_Measured_Quantity[idx])
+                pred_labels = _split_pipe_list(Save_Predicted_Quantity[idx])
+
+                # Assign label by index (MATLAB style)
+                def _label_at(k, labels):
+                    if len(labels) == 0:
+                        return ""
+                    if len(labels) == 1:
+                        return labels[0]
+                    if k < len(labels):
+                        return labels[k]
+                    return labels[-1]  # MATLAB tolerance fallback
+
+                # Case metadata
+                case_name = Save_Dataname[idx]
+                group     = Save_Group_Key_Label[idx]
+                metric    = Save_Metric_Type[idx]
+                depvar    = Save_Dep_Title[idx]
+                err_tol   = float(Save_Error_Tolerance[idx] or 0.0)
+                err_type  = str(Save_Quantity[idx] or "")
+                plot_file = Save_Plot_Filename[idx]
+
+                # --- Generate one row per point ---
+                for k in range(min(len(mvals), len(pvals))):
+
+                    m = float(mvals[k])
+                    p = float(pvals[k])
+                    mq = _label_at(k, meas_labels)
+                    pq = _label_at(k, pred_labels)
+
+                    # Compute error (Relative or Absolute)
+                    if err_type.lower().startswith("relative"):
+                        err = abs((p - m) / m) if m != 0 else np.nan
+                    else:
+                        err = abs(p - m)
+
+                    within = "Yes" if (np.isfinite(err) and err <= err_tol) else "Out of Tolerance"
+
+                    # Order MUST match MATLAB exactly
+                    output_stats.append([
+                        idx + 1,           # Dataplot line number
+                        group,             # Verification group
+                        case_name,         # Case name (string)
+                        metric,            # Metric type (e.g. "end")
+                        mq,                # Expected quantity label (MATLAB: one per row)
+                        m,                 # Expected value
+                        pq,                # Predicted quantity label
+                        p,                 # Predicted value
+                        depvar,            # Dependent variable title
+                        err_type,          # Type of Error (Relative or Absolute)
+                        f"{err:1.2e}",     # Error
+                        f"{err_tol:1.2e}", # Error Tolerance
+                        within,            # Within Spec?
+                        plot_file,         # Plot filename
+                    ])
+
+            continue  # Move to next scatterplot definition
+
+        Measured_Values = np.concatenate(  [np.ravel(np.array(Save_Measured_Metric[i], dtype=float)) for i in match_idx]  )
+        Predicted_Values = np.concatenate(  [np.ravel(np.array(Save_Predicted_Metric[i], dtype=float)) for i in match_idx]  )
+
+        # --- Ensure equal-length measured and predicted arrays before masking ---
+        m_len = len(Measured_Values)
+        p_len = len(Predicted_Values)
+        if m_len != p_len:
+            print(f"[scatplot] Skipping '{Scatter_Plot_Title}' "
+                  f"due to length mismatch: measured={m_len}, predicted={p_len}")
+            print(f"   Example Measured sample: {Measured_Values[:5]}")
+            print(f"   Example Predicted sample: {Predicted_Values[:5]}")
+            continue  # skip to next scatterplot, as MATLAB does
+
+        mask = np.isfinite(Measured_Values) & np.isfinite(Predicted_Values)
+        Measured_Values = Measured_Values[mask]
+        Predicted_Values = Predicted_Values[mask]
 
 
-    # --- Placeholder output_stats table ---
-    # This will later be replaced with computed statistics per quantity
-    # For now, collect each scatterplot title with basic counts
-    output_stats = []
-    output_stats.append([
-        "Quantity", "Datasets", "Points", "Sigma_E", "Sigma_M", "Bias"
-    ])
+        # --- Call histogram BEFORE filtering to match MATLAB (includes zeros/Infs) ---
+        try:
+            hist_file = statistics_histogram(
+                Measured_Values, Predicted_Values,
+                Plot_Filename, Manuals_Dir, Scatter_Plot_Title
+            )
+            if hist_file:
+                Output_Histograms.append(hist_file)
+        except Exception as e:
+            print(f"[scatplot] Histogram error for {Scatter_Plot_Title}: {e}")
 
-    for idx, row in df.iterrows():
-        title = row['Scatter_Plot_Title']
-        match_indices = [i for i, q in enumerate(Save_Quantity)
-                         if title.split(',')[0].strip().lower() in str(q).lower()]
-        if not match_indices:
-            continue
-        num_datasets = len(match_indices)
-        num_points = sum(
-            len(np.atleast_1d(Save_Measured_Metric[i])) for i in match_indices
+        # --- Now filter for plotting & statistics ---
+        in_range = (
+            (Measured_Values >= Plot_Min) & (Measured_Values <= Plot_Max) &
+            (Predicted_Values >= Plot_Min) & (Predicted_Values <= Plot_Max)
         )
-        sigma_e = np.nanstd([Save_Measured_Metric[i] for i in match_indices])
-        sigma_m = np.nanstd([Save_Predicted_Metric[i] for i in match_indices])
-        bias = np.nanmean([
-            np.nanmean(Save_Predicted_Metric[i]) - np.nanmean(Save_Measured_Metric[i])
-            for i in match_indices
-        ])
+        positive = (Measured_Values > 0) & (Predicted_Values > 0)
+        mask = in_range & positive
+        Measured_Values  = Measured_Values[mask]
+        Predicted_Values = Predicted_Values[mask]
+
+        if len(Measured_Values) == 0:
+            print(f"[scatplot] Skipping {Scatter_Plot_Title} (no valid data)")
+            continue
+
+        # --- Compute statistics (MATLAB bin-weighted logic) ---
+
+        n_pts = len(Measured_Values)
+        weight = np.ones(n_pts)
+
+        # MATLAB behavior: Weight_Data == 'yes' by default for validation
+        Weight_Data = str(row.get("Weight_Data", "yes")).strip().lower()
+
+        if Weight_Data == "yes" and n_pts > 0:
+            max_meas = np.max(Measured_Values)
+            bin_size = max_meas / 10.0
+
+            bin_weight = np.zeros(10)
+
+            # Compute bin weights (n_pts / points in bin)
+            for ib in range(10):
+                lo = ib * bin_size
+                hi = (ib + 1) * bin_size
+                idx = np.where((Measured_Values > lo) & (Measured_Values <= hi))[0]
+                if len(idx) > 0:
+                    bin_weight[ib] = n_pts / len(idx)
+                else:
+                    bin_weight[ib] = 0.0
+
+            # Assign weights to each point
+            for iv in range(n_pts):
+                for ib in range(10):
+                    lo = ib * bin_size
+                    hi = (ib + 1) * bin_size
+                    if Measured_Values[iv] > lo and Measured_Values[iv] <= hi:
+                        weight[iv] = bin_weight[ib]
+                        break
+
+        # Weighted log-means
+        log_E_bar = np.sum(np.log(Measured_Values) * weight) / np.sum(weight)
+        log_M_bar = np.sum(np.log(Predicted_Values) * weight) / np.sum(weight)
+
+        # Weighted variance
+        denom = np.sum(weight) - 1
+        if denom > 0:
+            u2 = np.sum(((np.log(Predicted_Values) - np.log(Measured_Values)
+                          - (log_M_bar - log_E_bar)) ** 2) * weight) / denom
+        else:
+            u2 = 0.0
+
+        u = np.sqrt(u2)
+
+
+        # Restore MATLAB logic:
+        # If no Sigma_E is supplied, experimental sigma = u/sqrt(2)
+        if Sigma_E_input > 0:
+            Sigma_E = Sigma_E_input / 100.0
+        else:
+            Sigma_E = u / np.sqrt(2)
+
+        Sigma_M = np.sqrt(max(0.0, u**2 - Sigma_E**2))
+        delta = np.exp(log_M_bar - log_E_bar + 0.5 * Sigma_M**2 - 0.5 * Sigma_E**2)
+
+        # --- Scatter Plot ---
+        fig = fdsplotlib.plot_to_fig(x_data=[-1], y_data=[-1],
+                                figure_size=scat_figure_size,
+                                plot_size=scat_plot_size,
+                                plot_origin=scat_plot_origin,
+                                plot_type=Plot_Type,
+                                x_min=Plot_Min, x_max=Plot_Max, y_min=Plot_Min, y_max=Plot_Max,
+                                x_label=row["Ind_Title"],
+                                y_label=row["Dep_Title"],
+                                legend_location='outside',
+                                legend_expand=row["Paper_Width_Factor"])
+
+        fdsplotlib.plot_to_fig(x_data=[Plot_Min, Plot_Max], y_data=[Plot_Min, Plot_Max], line_style="k-", figure_handle=fig)
+        fdsplotlib.plot_to_fig(x_data=[Plot_Min, Plot_Max], y_data=np.array([Plot_Min, Plot_Max]) * (1 + 2 * Sigma_E), line_style="k--", figure_handle=fig)
+        fdsplotlib.plot_to_fig(x_data=[Plot_Min, Plot_Max], y_data=np.array([Plot_Min, Plot_Max]) / (1 + 2 * Sigma_E), line_style="k--", figure_handle=fig)
+        fdsplotlib.plot_to_fig(x_data=[Plot_Min, Plot_Max], y_data=np.array([Plot_Min, Plot_Max]) * delta, line_style="r-", figure_handle=fig)
+        fdsplotlib.plot_to_fig(x_data=[Plot_Min, Plot_Max], y_data=np.array([Plot_Min, Plot_Max]) * delta * (1 + 2 * Sigma_M), line_style="r--", figure_handle=fig)
+        fdsplotlib.plot_to_fig(x_data=[Plot_Min, Plot_Max], y_data=np.array([Plot_Min, Plot_Max]) * delta / (1 + 2 * Sigma_M), line_style="r--", figure_handle=fig)
+
+        # --- Add statistics annotation ---
+        ax = fig.gca()
+        xnorm = 0.03   # 3% from left
+        ynorm = 0.97   # 3% from top
+        dy = 0.05      # vertical spacing in normalized units
+        ax.text(xnorm, ynorm,f"{Scatter_Plot_Title}",fontsize=plot_style["Scat_Title_Font_Size"],ha="left", va="top",transform=ax.transAxes)
+        ax.text(xnorm, ynorm - dy,f"Exp. Rel. Std. Dev.: {Sigma_E:.2f}",fontsize=plot_style["Scat_Label_Font_Size"],ha="left", va="top",transform=ax.transAxes)
+        ax.text(xnorm, ynorm - 2*dy,f"Model Rel. Std. Dev.: {Sigma_M:.2f}",fontsize=plot_style["Scat_Label_Font_Size"],ha="left", va="top",transform=ax.transAxes)
+        ax.text(xnorm, ynorm - 3*dy,f"Model Bias Factor: {delta:.2f}",fontsize=plot_style["Scat_Label_Font_Size"],ha="left", va="top",transform=ax.transAxes)
+
+        # --- Plot each dataset with its own marker and color ---
+        seen_labels = set()
+
+        for idx in match_idx:
+            style = str(Save_Group_Style[idx]).strip() if Save_Group_Style[idx] else "ko"
+            fill = str(Save_Fill_Color[idx]).strip() if Save_Fill_Color[idx] else "none"
+            label = str(Save_Group_Key_Label[idx]).strip() if Save_Group_Key_Label[idx] else ""
+
+            # Flatten valid points for this dataset
+            mvals = np.array(Save_Measured_Metric[idx], dtype=float).flatten()
+            pvals = np.array(Save_Predicted_Metric[idx], dtype=float).flatten()
+
+            if len(mvals) != len(pvals):
+                print(f"[DEBUG] Mismatch for {Scatter_Plot_Title} @ idx={idx}: "
+                      f"Measured={len(mvals)}, Predicted={len(pvals)}, "
+                      f"Group={Save_Group_Key_Label[idx]}")
+                print(f"   Measured metric sample: {mvals[:5]}")
+                print(f"   Predicted metric sample: {pvals[:5]}")
+
+            mask = (
+                (mvals >= Plot_Min) & (mvals <= Plot_Max) &
+                (pvals >= Plot_Min) & (pvals <= Plot_Max) &
+                (mvals > 0) & (pvals > 0)
+            )
+            mvals = mvals[mask]
+            pvals = pvals[mask]
+
+            if len(mvals) == 0:
+                continue
+
+            # Only assign a legend label once per experiment
+            data_label = label if label and label not in seen_labels else None
+            if label:
+                seen_labels.add(label)
+
+            fdsplotlib.plot_to_fig(
+                x_data=mvals,
+                y_data=pvals,
+                marker_style=style,
+                marker_fill_color=fill,
+                figure_handle=fig,
+                data_label=data_label,
+            )
+
+        pdf_path = os.path.join(Manuals_Dir, Plot_Filename + ".pdf")
+        os.makedirs(os.path.dirname(pdf_path), exist_ok=True)
+        fig.savefig(pdf_path)
+        plt.close(fig)
+        plt.clf()
+
+        # --- Collect statistics for CSV/TeX ---
+        group_labels = []
+        for i in match_idx:
+            try:
+                gl = Save_Group_Key_Label[i]
+                if isinstance(gl, (list, tuple)):
+                    gl = gl[0] if len(gl) > 0 else ""
+                gl = str(gl).strip() if gl is not None else ""
+                group_labels.append(gl)
+            except Exception:
+                pass
+        unique_datasets = len(set(g for g in group_labels if g))
+
         output_stats.append([
-            title, num_datasets, num_points, sigma_e, sigma_m, bias
+            Scatter_Plot_Title,
+            unique_datasets,
+            len(Measured_Values),
+            f"{Sigma_E:.2f}",
+            f"{Sigma_M:.2f}",
+            f"{delta:.2f}",
         ])
 
-
-    # --- Stats output placeholder ---
-    stats_csv = os.path.join(scatterplot_dir, f"ScatterPlot_Stats_{stats_output}.csv")
-    tex_out   = os.path.join(scatterplot_dir, f"ScatterPlot_Tables_{stats_output}.tex")
-    hist_out  = os.path.join(scatterplot_dir, f"ScatterPlot_Histograms_{stats_output}.tex")
-
+    # --- Write statistics outputs ---
     statistics_output(
-        Stats_Output=stats_output,
+        Stats_Output=Stats_Output,
         output_stats=output_stats,
-        Output_File=stats_csv,
-        Statistics_Tex_Output=tex_out,
-        Histogram_Tex_Output=hist_out,
-        Output_Histograms=[]
+        Output_File=Output_File,
+        Statistics_Tex_Output=Statistics_Tex_Output,
+        Histogram_Tex_Output=Histogram_Tex_Output,
+        Output_Histograms=Output_Histograms,
     )
 
-
     print("[scatplot] Completed successfully.")
+    return
 
+
+def _write_raw_scatter_csv(
+    outdir,
+    scatter_title,
+    match_idx,
+    Save_csv_rownum,
+    Save_Dataname,
+    Save_Measured_Metric,
+    Save_Predicted_Metric,
+):
+    """
+    Write raw (pre-mask) measured/predicted values used by scatplot.
+    Values are rounded to 4 significant figures for clean CSV output.
+    """
+    import os
+    import csv
+    import numpy as np
+
+    # Match histogram naming convention
+    fname = (
+        "FDS_"
+        + scatter_title
+        .replace(" ", "_")
+        .replace(";", "")
+        .replace("/", "_")
+    )
+    csv_path = os.path.join(outdir, f"{fname}_raw_scatter_values.csv")
+
+    def _sig4(x):
+        """Round to 3 significant figures, preserving scientific notation."""
+        try:
+            return float(f"{float(x):.4g}")
+        except Exception:
+            return ""
+
+    with open(csv_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            "csv_rownum",
+            "Dataname",
+            "Predicted_Values",
+            "Measured_Values",
+        ])
+
+        for idx in match_idx:
+            rownum = Save_csv_rownum[idx]
+            dataname = Save_Dataname[idx]
+
+            mvals = np.array(Save_Measured_Metric[idx], dtype=float).flatten()
+            pvals = np.array(Save_Predicted_Metric[idx], dtype=float).flatten()
+
+            n = min(len(mvals), len(pvals))
+            for k in range(n):
+                writer.writerow([
+                    rownum,
+                    dataname,
+                    _sig4(pvals[k]),
+                    _sig4(mvals[k]),
+                ])
+
+    return csv_path
 
 
 def statistics_output(
@@ -1388,144 +2399,307 @@ def statistics_output(
     Output_Histograms=None,
 ):
     """
-    Python translation of statistics_output.m (K. Overholt, 2013)
-    Modernized using pandas for CSV I/O.
+    Python translation of MATLAB statistics_output.m
 
-    Parameters
-    ----------
-    Stats_Output : str
-        'Validation', 'Verification', or 'None'
-    output_stats : list of lists, numpy array, or pandas DataFrame
-        Statistical results to write
-    Output_File : str
-        Path to write CSV file
-    Statistics_Tex_Output : str, optional
-        Path to write LaTeX table file
-    Histogram_Tex_Output : str, optional
-        Path to write LaTeX histogram file
-    Output_Histograms : list, optional
-        List of histogram figure filenames
+    - For 'Verification': writes CSV + verification_statistics.tex
+    - For 'Validation' : writes CSV + validation_statistics.tex + histograms
     """
-    import os
-    import numpy as np
-    import pandas as pd
 
-    if Stats_Output == "None":
+    import os
+    import pandas as pd
+    import numpy as np
+
+    if Stats_Output is None or str(Stats_Output).lower() == "none":
         print("[statistics_output] Skipping (Stats_Output=None)")
         return
 
-    # --- normalize to DataFrame ---
-    if not isinstance(output_stats, pd.DataFrame):
-        try:
-            output_stats = pd.DataFrame(output_stats)
-        except Exception as e:
-            print(f"[statistics_output] Could not convert output_stats to DataFrame: {e}")
-            return
+    # Ensure output directory exists
+    out_dir = os.path.dirname(Output_File)
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
 
-    if output_stats.empty:
-        print("[statistics_output] No stats to write")
-        return
+    # ------------------------------------------------------------------
+    # VERIFICATION BRANCH  (Stats_Output == 'Verification')
+    # ------------------------------------------------------------------
+    if str(Stats_Output).lower() == "verification":
 
-    # --- Write CSV ---
-    os.makedirs(os.path.dirname(Output_File), exist_ok=True)
-    output_stats.to_csv(Output_File, index=False, quoting=1)  # quote all non-numerics
+        # --- 1) Write CSV exactly from output_stats (header + rows) ---
+        header = output_stats[0]
+        rows   = output_stats[1:]
+        df_csv = pd.DataFrame(rows, columns=header)
+        df_csv.to_csv(Output_File, index=False)
+        print(f"[statistics_output] Wrote verification CSV: {Output_File}")
+
+        # --- 2) Write LaTeX table (MATLAB-style verification_statistics.tex) ---
+        # --- Write LaTeX verification table (MATLAB-faithful) ---
+        if Statistics_Tex_Output:
+
+            def _escape(s):
+                return (str(s)
+                        .replace('\\', '\\textbackslash{}')
+                        .replace('_', '\\_')
+                        .replace('%', '\\%')
+                        .replace('&', '\\&')
+                        .replace('#', '\\#')
+                        .replace('{', '\\{')
+                        .replace('}', '\\}'))
+
+            def _safe_float(x):
+                try:
+                    return float(x)
+                except:
+                    return None
+
+            header = output_stats[0]
+            rows = output_stats[1:]
+
+            # ! DO NOT SORT — MATLAB preserves dataplot order
+            # rows = sorted(rows, key=lambda r: str(r[2]).lower())
+
+            with open(Statistics_Tex_Output, "w") as fid:
+
+                fid.write("\\scriptsize\n")
+                fid.write("\\begin{longtable}{|p{2.5in}|l|p{1in}|l|p{1in}|l|l|l|l|l|}\n")
+                fid.write("\\hline\n")
+                fid.write("Case Name & Section & Expected & Expected & Predicted & Predicted & "
+                          "Type of & Error & Error & Within \\\\\n")
+                fid.write(" & & Quantity & Value & Quantity & Value & Error &  & Tolerance & Tol. "
+                          "\\\\ \\hline \\hline\n")
+                fid.write("\\endfirsthead\n\\hline\n")
+                fid.write("Case Name & Section & Expected & Expected & Predicted & Predicted & "
+                          "Type of & Error & Error & Within \\\\\n")
+                fid.write(" & & Quantity & Value & Quantity & Value & Error &  & Tolerance & Tol. "
+                          "\\\\ \\hline \\hline\n")
+                fid.write("\\endhead\n\\hline\n\\endfoot\n\\hline\n\\endlastfoot\n")
+
+                for r in rows:
+
+                    case = str(r[2])
+                    if str(r[13])[:14]=='FDS_User_Guide':
+                        section = f"\\ref{{{'UG-'+case}}}"
+                    else:
+                        section = f"\\ref{{{case}}}"
+
+                    # One row per datapoint; no splitting, no combining
+                    exp_q  = _escape(r[4])
+                    pred_q = _escape(r[6])
+
+                    exp_val_f = _safe_float(r[5])
+                    pred_val_f = _safe_float(r[7])
+                    err_val_f = _safe_float(r[10])
+                    tol_f = _safe_float(r[11])
+
+                    exp_val  = f"{exp_val_f:1.2e}" if exp_val_f is not None else _escape(r[5])
+                    pred_val = f"{pred_val_f:1.2e}" if pred_val_f is not None else _escape(r[7])
+                    err_val  = f"{err_val_f:1.2e}" if err_val_f is not None else _escape(r[10])
+                    tol_val  = f"{tol_f:1.2e}"     if tol_f is not None else _escape(r[11])
+
+                    err_type = str(r[9]).replace(" Error", "")
+                    within   = _escape(r[12])
+
+                    fid.write(
+                        f"{_escape(case)} & {section} & "
+                        f"{exp_q} & {exp_val} & "
+                        f"{pred_q} & {pred_val} & "
+                        f"{err_type} & {err_val} & "
+                        f"{tol_val} & {within} \\\\\n"
+                    )
+
+                fid.write("\\end{longtable}\n\\normalsize\n")
+
+            print(f"[statistics_output] Wrote LaTeX Verification table: {Statistics_Tex_Output}")
+
+        return  # Done with verification branch
+
+    # ------------------------------------------------------------------
+    # VALIDATION BRANCH  (unchanged in spirit from your version)
+    # ------------------------------------------------------------------
+    # Build DataFrame from output_stats
+    df = pd.DataFrame(output_stats[1:], columns=output_stats[0])
+
+    # Ensure correct types for the two numeric count columns
+    if "Number of Datasets" in df.columns:
+        df["Number of Datasets"] = pd.to_numeric(
+            df["Number of Datasets"], errors="coerce"
+        ).fillna(0).astype(int)
+
+    if "Number of Points" in df.columns:
+        df["Number of Points"] = pd.to_numeric(
+            df["Number of Points"], errors="coerce"
+        ).fillna(0).astype(int)
+
+    # Format last three numeric-looking columns as strings w/ 2 decimals
+    for col in ["Sigma_Experiment", "Sigma_Model", "Bias"]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").map(
+                lambda x: f"{x:0.2f}" if np.isfinite(x) else ""
+            )
+
+    # Write CSV
+    df.to_csv(Output_File, index=False)
     print(f"[statistics_output] Wrote CSV: {Output_File}")
 
-    # --- Write LaTeX for Verification ---
-    if Stats_Output == "Verification" and Statistics_Tex_Output:
-        with open(Statistics_Tex_Output, "w") as fid:
-            fid.write("\\scriptsize\n")
-            fid.write("\\begin{longtable}{|p{2.5in}|l|p{1in}|l|p{1in}|l|l|l|l|l|}\n")
-            fid.write("\\hline\n")
-            fid.write(
-                "Case Name & Section & Expected & Expected & Predicted & Predicted & "
-                "Type of & Error & Error & Within \\\\\n"
-            )
-            fid.write(
-                "          &         & Quantity & Value & Quantity & Value & Error &  "
-                "& Tolerance & Tol. \\\\ \\hline \\hline\n"
-            )
-            fid.write("\\endfirsthead\n\\hline\n")
-            fid.write(
-                "Case Name & Section & Expected & Expected & Predicted & Predicted & "
-                "Type of & Error & Error & Within \\\\\n"
-            )
-            fid.write(
-                "          &         & Quantity & Value & Quantity & Value & Error &  "
-                "& Tolerance & Tol. \\\\ \\hline \\hline\n"
-            )
-            fid.write("\\endhead\n\\hline\n\\endfoot\n\\hline\n\\endlastfoot\n")
-
-            m = output_stats.iloc[1:].sort_values(by=output_stats.columns[0])
-            for _, r in m.iterrows():
-                try:
-                    case = f"\\lstinline[basicstyle=\\scriptsize\\ttfamily]!{r[2]}!"
-                    section = f"\\ref{{{r[2]}}}"
-                    exp_q = f"\\lstinline[basicstyle=\\scriptsize\\ttfamily]!{r[4]}!"
-                    pred_q = f"\\lstinline[basicstyle=\\scriptsize\\ttfamily]!{r[6]}!"
-                    fid.write(
-                        f"{case} & {section} & {exp_q} & {float(r[5]):1.2e} & "
-                        f"{pred_q} & {float(r[7]):1.2e} & "
-                        f"{str(r[9]).replace(' Error','')} & "
-                        f"{float(r[10]):1.2e} & {float(r[11]):1.2e} & {r[12]} \\\\\n"
-                    )
-                except Exception as e:
-                    print(f"[statistics_output] Skipped Verification row due to error: {e}")
-
-            fid.write("\\end{longtable}\n\\normalsize\n")
-        print(f"[statistics_output] Wrote LaTeX Verification table: {Statistics_Tex_Output}")
-
-    # --- Write LaTeX for Validation ---
-    if Stats_Output == "Validation" and Statistics_Tex_Output:
+    # -------- LaTeX Validation Table --------
+    if str(Stats_Output).lower() == "validation" and Statistics_Tex_Output:
         with open(Statistics_Tex_Output, "w") as fid:
             fid.write("\\begin{longtable}[c]{|l|c|c|c|c|c|c|}\n")
             fid.write(
                 "\\caption[Summary statistics]{Summary statistics for all quantities of interest}\n"
             )
-            fid.write("\\label{summary_stats}\n\\\\ \\hline\n")
+            fid.write("\\label{summary_stats}\n")
+            fid.write("\\\\ \\hline\n")
             fid.write(
-                "Quantity & Section & Datasets & Points & "
-                "$\\widetilde{\\sigma}_{\\rm E}$ & $\\widetilde{\\sigma}_{\\rm M}$ & Bias \\\\ \\hline \\hline\n"
+                "Quantity & Section   & Datasets  & Points    & "
+                "$\\widetilde{\\sigma}_{\\rm E}$ & "
+                "$\\widetilde{\\sigma}_{\\rm M}$ & Bias "
+                "\\\\ \\hline \\hline\n"
             )
             fid.write("\\endfirsthead\n\\hline\n")
             fid.write(
-                "Quantity & Section & Datasets & Points & "
-                "$\\widetilde{\\sigma}_{\\rm E}$ & $\\widetilde{\\sigma}_{\\rm M}$ & Bias \\\\ \\hline \\hline\n"
+                "Quantity & Section   & Datasets  & Points    & "
+                "$\\widetilde{\\sigma}_{\\rm E}$ & "
+                "$\\widetilde{\\sigma}_{\\rm M}$ & Bias "
+                "\\\\ \\hline \\hline\n"
             )
             fid.write("\\endhead\n")
 
-            for _, r in output_stats.iloc[1:].iterrows():
+            for _, r in df.iterrows():
                 try:
-                    sigma_e = float(r[3])
+                    sigma_e = float(r["Sigma_Experiment"])
                     if sigma_e < 0:
                         continue
-                    quantity = r[0]
+                    quantity = str(r["Quantity"])
                     section = f"\\ref{{{quantity}}}"
                     fid.write(
-                        f"{quantity} & {section} & {int(r[1])} & {int(r[2])} & "
-                        f"{sigma_e:0.2f} & {float(r[4]):0.2f} & {float(r[5]):0.2f} \\\\ \\hline\n"
+                        f"{quantity} & {section} & "
+                        f"{int(r['Number of Datasets'])} & "
+                        f"{int(r['Number of Points'])} & "
+                        f"{float(r['Sigma_Experiment']):0.2f} & "
+                        f"{float(r['Sigma_Model']):0.2f} & "
+                        f"{float(r['Bias']):0.2f} "
+                        "\\\\ \\hline\n"
                     )
                 except Exception as e:
-                    print(f"[statistics_output] Skipped Validation row due to error: {e}")
+                    print(f"[statistics_output] Skipped row due to error: {e}")
 
             fid.write("\\end{longtable}\n")
+
         print(f"[statistics_output] Wrote LaTeX Validation table: {Statistics_Tex_Output}")
 
-    # --- Histogram LaTeX (optional) ---
-    if Stats_Output == "Validation" and Output_Histograms:
-        os.makedirs(os.path.dirname(Histogram_Tex_Output), exist_ok=True)
+    # -------- Histogram LaTeX --------
+    if str(Stats_Output).lower() == "validation" and Output_Histograms:
         with open(Histogram_Tex_Output, "w") as fid:
-            num_hist = len(Output_Histograms)
-            pages = int(np.ceil(num_hist / 8))
+            n = len(Output_Histograms)
+            pages = int(np.ceil(n / 8.0))
             for i in range(pages):
                 fid.write("\\begin{figure}[p]\n")
                 fid.write("\\begin{tabular*}{\\textwidth}{l@{\\extracolsep{\\fill}}r}\n")
-                for j in range(i * 8, min((i + 1) * 8, num_hist)):
-                    line_ending = "&" if j % 2 == 0 else "\\\\"
+                for j in range(i * 8, min((i + 1) * 8, n)):
+                    end = "&" if (j % 2) == 0 else "\\\\"
                     fid.write(
                         f"\\includegraphics[height=2.2in]"
-                        f"{{SCRIPT_FIGURES/ScatterPlots/{Output_Histograms[j]}}} {line_ending}\n"
+                        f"{{SCRIPT_FIGURES/Scatterplots/{Output_Histograms[j]}}} {end}\n"
                     )
                 fid.write("\\end{tabular*}\n")
-                fid.write(f"\\label{{Histogram_{i+1}}}\n\\end{figure}\n\n")
+                fid.write(f"\\label{{Histogram_{i + 1}}}\n")
+                fid.write("\\end{figure}\n\n")
         print(f"[statistics_output] Wrote LaTeX histograms: {Histogram_Tex_Output}")
+
+
+def histogram_output(Histogram_Tex_Output, Output_Histograms):
+    """
+    Replicates MATLAB validation_histograms.tex layout exactly.
+    Produces 8 histograms per page, 2 columns per row.
+    """
+    import numpy as np
+
+    if not Output_Histograms:
+        print("[histogram_output] No histograms to write.")
+        return
+
+    with open(Histogram_Tex_Output, "w") as fid:
+        n = len(Output_Histograms)
+        pages = int(np.ceil(n / 8))
+
+        for i in range(pages):
+            fid.write("\\begin{figure}[p]\n")
+            fid.write("\\begin{tabular*}{\\textwidth}{l@{\\extracolsep{\\fill}}r}\n")
+
+            for j in range(i * 8, min((i + 1) * 8, n)):
+                end = "&" if j % 2 == 0 else "\\\\"
+                fid.write(f"\\includegraphics[height=2.2in]"
+                          f"{{SCRIPT_FIGURES/Scatterplots/{Output_Histograms[j]}}} {end}\n")
+
+            fid.write("\\end{tabular*}\n")
+            fid.write(f"\\label{{Histogram_{i + 1}}}\n")
+            fid.write("\\end{figure}\n\n")
+
+    print(f"[histogram_output] Wrote LaTeX histogram file: {Histogram_Tex_Output}")
+
+
+def statistics_histogram(Measured_Values, Predicted_Values,
+                         Plot_Filename, Manuals_Dir, Scatter_Plot_Title,
+                         Figure_Visibility='off', Paper_Width=5.0,
+                         Paper_Height=3.0, Paper_Units='inches',
+                         Image_File_Type='-dpdf'):
+    """Faithful translation of statistics_histogram.m (Overholt 2013)."""
+    import numpy as np
+    import matplotlib.pyplot as plt
+    import os
+    from matplotlib.ticker import MaxNLocator
+
+    # --- Compute ln(M/E) exactly as MATLAB
+    with np.errstate(divide='ignore', invalid='ignore'):
+        ln_M_E = np.log(Predicted_Values) - np.log(Measured_Values)
+
+    # MATLAB's hist() ignores NaN/Inf implicitly
+    valid = np.isfinite(ln_M_E)
+    ln_M_E = ln_M_E[valid]
+
+    n, xout = np.histogram(ln_M_E, bins=10)
+    xcenters = 0.5 * (xout[:-1] + xout[1:])
+
+    fig, ax = plt.subplots(figsize=(5, 3))
+    ax.bar(xcenters, n, width=(xout[1]-xout[0]), linewidth=1,
+           edgecolor='k', color=(0.7, 0.7, 0.7))
+
+    dx = xout[1] - xout[0]
+    x_lim = [xout[0] - dx, xout[-1] + dx]
+    ix = np.arange(x_lim[0], x_lim[1], 1e-3)
+    mu = np.mean(ln_M_E)
+    sd = np.std(ln_M_E, ddof=0)
+    if sd == 0:
+        # Degenerate distribution: all mass at mu
+        ax.axvline(mu, color='k', linewidth=2)
+    else:
+        iy = (1 / (sd * np.sqrt(2 * np.pi))) * np.exp(-(ix - mu) ** 2 / (2 * sd ** 2))
+        ax.plot(ix, iy * np.trapz(n, xcenters), 'k', linewidth=2)
+
+    ax.set_xlim(x_lim)
+    y0, y1 = ax.get_ylim()
+    ax.set_ylim([y0, y1 * 1.25])
+    ax.set_xlabel(r"$\ln(M/E)$")
+    ax.set_ylabel("Number of Data Points")
+    ax.set_xticks(xout)
+    ax.set_xticklabels([f"{x:.2f}" for x in xout])
+    ax.yaxis.set_major_locator(MaxNLocator(integer=True))
+    ax.text(0.03, 0.90, Scatter_Plot_Title, transform=ax.transAxes)
+
+    outpath = os.path.join(Manuals_Dir, f"{Plot_Filename}_Histogram.pdf")
+    os.makedirs(os.path.dirname(outpath), exist_ok=True)
+    plt.tight_layout()
+    fig.savefig(outpath)
+    plt.close(fig)
+    plt.clf()
+
+    return f"{os.path.basename(Plot_Filename)}_Histogram"
+
+
+def set_ticks_like_matlab(fig):
+    ax = fig.axes[0]
+    ax.tick_params(axis="both", direction="in", top=True, right=True, width=0.5)
+
+    for axis in ['top','bottom','left','right']:
+        ax.spines[axis].set_linewidth(0.5)
+
+

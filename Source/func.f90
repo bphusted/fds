@@ -138,42 +138,24 @@ END SUBROUTINE SHUTDOWN
 !> \brief Return current system memory usage.
 !> \param VALUE_RSS Resident stack size
 !> Return the memory used by the given process at the time of the call. This only works under Linux because
-!> the system file called '/proc/PID/status' is queried for the VmRSS value (kB).
+!> the system file called '/proc/self/status' is queried for the VmRSS value (kB).
 !> The DEVC output QUANTITY 'RAM' outputs this value in units of MB.
-!> For non-linux or non-Intel builds, this routine just returns 0 because it is non-standard Fortran and it makes use
-!> of linux system files.
+!> For non-linux builds this routine just returns 0
 
 SUBROUTINE SYSTEM_MEM_USAGE(VALUE_RSS)
 
-#ifdef USE_IFPORT
-   USE IFPORT  ! Intel Fortran extension library. This is needed for GETPID.
-#endif
 INTEGER, INTENT(OUT) :: VALUE_RSS
-CHARACTER(200):: FILENAME=' '
+INTEGER :: IOS
 CHARACTER(80) :: LINE
-CHARACTER(8)  :: PID_CHAR=' '
-INTEGER :: PID
 LOGICAL :: IFXST
 
 VALUE_RSS=0  ! return zero if the memory file is not found
 
-PID = 0
-#ifdef USE_IFPORT
-   PID = GETPID() ! GETPID is non-standard Fortran.
-#endif
+INQUIRE(FILE='/proc/self/status',EXIST=IFXST)
+IF (.NOT.IFXST) RETURN
 
-IF (PID==0) RETURN
-
-WRITE(PID_CHAR,'(I8)') PID
-FILENAME = '/proc/'//TRIM(ADJUSTL(PID_CHAR))//'/status'
-
-INQUIRE(FILE=FILENAME,EXIST=IFXST)
-IF (.NOT.IFXST) then
-   WRITE (*,*) 'WARNING: Memory system file does not exist'
-  RETURN
-ENDIF
-
-OPEN(1000,FILE=FILENAME,ACTION='READ')
+OPEN(1000,FILE='/proc/self/status',STATUS='OLD', ACTION='READ', IOSTAT=IOS)
+IF (IOS /= 0) RETURN
 DO
    READ (1000,'(A)',END=120) LINE
    IF (LINE(1:6)=='VmRSS:') THEN
@@ -981,7 +963,7 @@ DO I=1,N
    ENDIF
    INDXR(I) = IROW
    INDXC(I) = ICOL
-   IF (ABS(A(ICOL,ICOL))<=TWO_EPSILON_EB) THEN
+   IF (ABS(A(ICOL,ICOL))<=TWENTY_EPSILON_EB) THEN
       IERROR = 103  ! Singular matrix in gaussj
       RETURN
       ENDIF
@@ -1293,8 +1275,8 @@ END FUNCTION F_B
 
 SUBROUTINE GET_SCALAR_FACE_VALUE(A,U,F,I1,I2,J1,J2,K1,K2,IOR,LIMITER)
 USE GLOBAL_CONSTANTS, ONLY: CENTRAL_LIMITER,GODUNOV_LIMITER,MINMOD_LIMITER,SUPERBEE_LIMITER,CHARM_LIMITER,MP5_LIMITER
-REAL(EB), INTENT(IN) :: A(0:,0:,0:),U(-1:,-1:,-1:)
-REAL(EB), INTENT(OUT) :: F(0:,0:,0:)
+REAL(EB), INTENT(IN), POINTER, DIMENSION(:,:,:) :: A,U
+REAL(EB), INTENT(INOUT), POINTER, DIMENSION(:,:,:) :: F
 INTEGER, INTENT(IN) :: LIMITER,I1,I2,J1,J2,K1,K2,IOR
 REAL(EB) :: R,B,DU_UP,DU_LOC,V(-2:2)
 INTEGER :: I,J,K,IM1,JM1,KM1,IP1,JP1,KP1,IP2,JP2,KP2
@@ -1339,12 +1321,12 @@ SELECT CASE(LIMITER)
                DU_LOC = U(I+IP1,J+JP1,K+KP1)-U(I,J,K)
                IF (A(I,J,K)>0._EB) THEN
                   DU_UP  = U(I,J,K)-U(I+IM1,J+JM1,K+KM1)
-                  R = DU_UP/(DU_LOC+SIGN(TWO_EPSILON_EB,DU_LOC))
+                  R = DU_UP/(DU_LOC+SIGN(TWENTY_EPSILON_EB,DU_LOC))
                   B = MAX(0._EB,MIN(2._EB*R,1._EB),MIN(R,2._EB))
                   F(I,J,K) = U(I,J,K) + 0.5_EB*B*DU_LOC
                ELSE
                   DU_UP  = U(I+IP2,J+JP2,K+KP2)-U(I+IP1,J+JP1,K+KP1)
-                  R = DU_UP/(DU_LOC+SIGN(TWO_EPSILON_EB,DU_LOC))
+                  R = DU_UP/(DU_LOC+SIGN(TWENTY_EPSILON_EB,DU_LOC))
                   B = MAX(0._EB,MIN(2._EB*R,1._EB),MIN(R,2._EB))
                   F(I,J,K) = U(I+IP1,J+JP1,K+KP1) - 0.5_EB*B*DU_LOC
                ENDIF
@@ -1360,12 +1342,12 @@ SELECT CASE(LIMITER)
                DU_LOC = U(I+IP1,J+JP1,K+KP1)-U(I,J,K)
                IF (A(I,J,K)>0._EB) THEN
                   DU_UP  = U(I,J,K)-U(I+IM1,J+JM1,K+KM1)
-                  R = DU_UP/(DU_LOC+SIGN(TWO_EPSILON_EB,DU_LOC))
+                  R = DU_UP/(DU_LOC+SIGN(TWENTY_EPSILON_EB,DU_LOC))
                   B = MAX(0._EB,MIN(R,1._EB))
                   F(I,J,K) = U(I,J,K) + 0.5_EB*B*DU_LOC
                ELSE
                   DU_UP  = U(I+IP2,J+JP2,K+KP2)-U(I+IP1,J+JP1,K+KP1)
-                  R = DU_UP/(DU_LOC+SIGN(TWO_EPSILON_EB,DU_LOC))
+                  R = DU_UP/(DU_LOC+SIGN(TWENTY_EPSILON_EB,DU_LOC))
                   B = MAX(0._EB,MIN(R,1._EB))
                   F(I,J,K) = U(I+IP1,J+JP1,K+KP1) - 0.5_EB*B*DU_LOC
                ENDIF
@@ -1383,14 +1365,14 @@ SELECT CASE(LIMITER)
                   DU_UP  = U(I,J,K)-U(I+IM1,J+JM1,K+KM1)
                   R = 0._EB
                   B = 0._EB
-                  IF (ABS(DU_UP)>TWO_EPSILON_EB) R = DU_LOC/DU_UP
+                  IF (ABS(DU_UP)>TWENTY_EPSILON_EB) R = DU_LOC/DU_UP
                   IF (R>0._EB) B = R*(3._EB*R+1._EB)/((R+1._EB)**2)
                   F(I,J,K) = U(I,J,K) + 0.5_EB*B*DU_UP
                ELSE
                   DU_UP  = U(I+IP2,J+JP2,K+KP2)-U(I+IP1,J+JP1,K+KP1)
                   R = 0._EB
                   B = 0._EB
-                  IF (ABS(DU_UP)>TWO_EPSILON_EB) R = DU_LOC/DU_UP
+                  IF (ABS(DU_UP)>TWENTY_EPSILON_EB) R = DU_LOC/DU_UP
                   IF (R>0._EB) B = R*(3._EB*R+1._EB)/((R+1._EB)**2)
                   F(I,J,K) = U(I+IP1,J+JP1,K+KP1) - 0.5_EB*B*DU_UP
                ENDIF
@@ -1449,159 +1431,6 @@ ENDIF
 END FUNCTION MP5
 
 END SUBROUTINE GET_SCALAR_FACE_VALUE
-
-
-SUBROUTINE GET_SCALAR_FACE_COEF(A,U,BF,I1,I2,J1,J2,K1,K2,IOR,LIMITER)
-
-USE GLOBAL_CONSTANTS, ONLY: CENTRAL_LIMITER,GODUNOV_LIMITER,SUPERBEE_LIMITER,CHARM_LIMITER
-
-REAL(EB), INTENT(IN) :: A(0:,0:,0:),U(-1:,-1:,-1:)
-REAL(EB), INTENT(INOUT) :: BF(0:,0:,0:)
-INTEGER, INTENT(IN) :: LIMITER,I1,I2,J1,J2,K1,K2,IOR
-REAL(EB) :: R,B,DU_UP,DU_LOC
-INTEGER :: I,J,K,IM1,JM1,KM1,IP1,JP1,KP1,IP2,JP2,KP2
-
-SELECT CASE(LIMITER)
-   CASE(GODUNOV_LIMITER,CENTRAL_LIMITER)
-      BF=0._EB
-      RETURN
-END SELECT
-
-SELECT CASE(IOR)
-   CASE(1) ; IM1=-1 ; JM1= 0 ; KM1= 0 ; IP1=1 ; JP1=0 ; KP1=0 ; IP2=2 ; JP2=0 ; KP2=0
-   CASE(2) ; IM1= 0 ; JM1=-1 ; KM1= 0 ; IP1=0 ; JP1=1 ; KP1=0 ; IP2=0 ; JP2=2 ; KP2=0
-   CASE(3) ; IM1= 0 ; JM1= 0 ; KM1=-1 ; IP1=0 ; JP1=0 ; KP1=1 ; IP2=0 ; JP2=0 ; KP2=2
-END SELECT
-
-!$OMP PARALLEL DEFAULT(NONE) IF(I2>1) &
-!$OMP& SHARED(U,A,BF,I1,I2,J1,J2,K1,K2,IP1,JP1,KP1,IM1,JM1,KM1,IP2,JP2,KP2,LIMITER) &
-!$OMP& PRIVATE(I,J,K,DU_UP,DU_LOC,B,R)
-
-SELECT CASE (LIMITER)
-
-   CASE (SUPERBEE_LIMITER)
-      !$OMP DO COLLAPSE(3) SCHEDULE(STATIC)
-      DO K=K1,K2
-         DO J=J1,J2
-            DO I=I1,I2
-               DU_LOC = U(I+IP1,J+JP1,K+KP1) - U(I,J,K)
-               IF (A(I,J,K) > 0._EB) THEN
-                  DU_UP = U(I,J,K) - U(I+IM1,J+JM1,K+KM1)
-               ELSE
-                  DU_UP = U(I+IP2,J+JP2,K+KP2) - U(I+IP1,J+JP1,K+KP1)
-               ENDIF
-               R = 0._EB ; B = 0._EB
-               IF (ABS(DU_LOC) > TWO_EPSILON_EB) R = DU_UP/DU_LOC
-               IF (R > TWO_EPSILON_EB) B = MAX(0._EB, MIN(2._EB*R,1._EB), MIN(R,2._EB))
-               BF(I,J,K) = MAX(0._EB, MIN(B, BF(I,J,K)))
-            ENDDO
-         ENDDO
-      ENDDO
-      !$OMP END DO
-
-   CASE (CHARM_LIMITER)
-      !$OMP DO COLLAPSE(3) SCHEDULE(STATIC)
-      DO K=K1,K2
-         DO J=J1,J2
-            DO I=I1,I2
-               DU_LOC = U(I+IP1,J+JP1,K+KP1) - U(I,J,K)
-               IF (A(I,J,K) > 0._EB) THEN
-                  DU_UP = U(I,J,K) - U(I+IM1,J+JM1,K+KM1)
-               ELSE
-                  DU_UP = U(I+IP2,J+JP2,K+KP2) - U(I+IP1,J+JP1,K+KP1)
-               ENDIF
-               R = 0._EB ; B = 0._EB
-               IF (ABS(DU_UP) > TWO_EPSILON_EB) R = DU_LOC/DU_UP
-               IF (R > TWO_EPSILON_EB) B = R*(3._EB*R+1._EB)/((R+1._EB)**2)
-               BF(I,J,K) = MAX(0._EB, MIN(B, BF(I,J,K)))
-            ENDDO
-         ENDDO
-      ENDDO
-      !$OMP END DO
-
-END SELECT
-!$OMP END PARALLEL
-
-END SUBROUTINE GET_SCALAR_FACE_COEF
-
-
-SUBROUTINE GET_SCALAR_FACE_VALUE_NEW(A,U,F,BF,I1,I2,J1,J2,K1,K2,IOR,LIMITER)
-
-USE GLOBAL_CONSTANTS, ONLY: CENTRAL_LIMITER,GODUNOV_LIMITER,SUPERBEE_LIMITER,CHARM_LIMITER
-
-REAL(EB), INTENT(IN) :: A(0:,0:,0:),U(-1:,-1:,-1:),BF(0:,0:,0:)
-REAL(EB), INTENT(OUT) :: F(0:,0:,0:)
-INTEGER, INTENT(IN) :: LIMITER,I1,I2,J1,J2,K1,K2,IOR
-REAL(EB) :: DU_UP,DU_LOC
-INTEGER :: I,J,K,IM1,JM1,KM1,IP1,JP1,KP1,IP2,JP2,KP2
-
-SELECT CASE(IOR)
-   CASE(1) ; IM1=-1 ; JM1= 0 ; KM1= 0 ; IP1=1 ; JP1=0 ; KP1=0 ; IP2=2 ; JP2=0 ; KP2=0
-   CASE(2) ; IM1= 0 ; JM1=-1 ; KM1= 0 ; IP1=0 ; JP1=1 ; KP1=0 ; IP2=0 ; JP2=2 ; KP2=0
-   CASE(3) ; IM1= 0 ; JM1= 0 ; KM1=-1 ; IP1=0 ; JP1=0 ; KP1=1 ; IP2=0 ; JP2=0 ; KP2=2
-END SELECT
-
-!$OMP PARALLEL IF(I2>1)
-SELECT CASE(LIMITER)
-   CASE(CENTRAL_LIMITER) ! central differencing
-      !$OMP DO SCHEDULE(STATIC)
-      DO K=K1,K2
-         DO J=J1,J2
-            DO I=I1,I2
-                  F(I,J,K) = 0.5_EB*(U(I,J,K) + U(I+IP1,J+JP1,K+KP1))
-            ENDDO
-         ENDDO
-      ENDDO
-      !$OMP END DO
-   CASE(GODUNOV_LIMITER) ! first-order upwinding
-      !$OMP DO SCHEDULE(STATIC)
-      DO K=K1,K2
-         DO J=J1,J2
-            DO I=I1,I2
-               IF (A(I,J,K)>0._EB) THEN
-                  F(I,J,K) = U(I,J,K)
-               ELSE
-                  F(I,J,K) = U(I+IP1,J+JP1,K+KP1)
-               ENDIF
-            ENDDO
-         ENDDO
-      ENDDO
-      !$OMP END DO
-   CASE(SUPERBEE_LIMITER) ! SUPERBEE, Roe (1986)
-      !$OMP DO SCHEDULE(STATIC) PRIVATE(DU_LOC)
-      DO K=K1,K2
-         DO J=J1,J2
-            DO I=I1,I2
-               DU_LOC = U(I+IP1,J+JP1,K+KP1)-U(I,J,K)
-               IF (A(I,J,K)>0._EB) THEN
-                  F(I,J,K) = U(I,J,K) + 0.5_EB*BF(I,J,K)*DU_LOC
-               ELSE
-                  F(I,J,K) = U(I+IP1,J+JP1,K+KP1) - 0.5_EB*BF(I,J,K)*DU_LOC
-               ENDIF
-            ENDDO
-         ENDDO
-      ENDDO
-      !$OMP END DO
-   CASE(CHARM_LIMITER) ! CHARM
-      !$OMP DO SCHEDULE(STATIC) PRIVATE(DU_UP)
-      DO K=K1,K2
-         DO J=J1,J2
-            DO I=I1,I2
-               IF (A(I,J,K)>0._EB) THEN
-                  DU_UP  = U(I,J,K)-U(I+IM1,J+JM1,K+KM1)
-                  F(I,J,K) = U(I,J,K) + 0.5_EB*BF(I,J,K)*DU_UP
-               ELSE
-                  DU_UP  = U(I+IP2,J+JP2,K+KP2)-U(I+IP1,J+JP1,K+KP1)
-                  F(I,J,K) = U(I+IP1,J+JP1,K+KP1) - 0.5_EB*BF(I,J,K)*DU_UP
-               ENDIF
-            ENDDO
-         ENDDO
-      ENDDO
-      !$OMP END DO
-END SELECT
-!$OMP END PARALLEL
-
-END SUBROUTINE GET_SCALAR_FACE_VALUE_NEW
 
 
 !> \brief Random fluctuation, Theta'(t+dt) = R^2*Theta'(t) + Normal(0,sqrt(1-R^2)*SIGMA) ; R = exp(-dt/TAU)
@@ -1739,12 +1568,12 @@ INTEGER:: NS
 
 MW_RATIO = 0._EB
 IF (PRESENT(Y_IN)) THEN
-   IF (ABS(Y_IN(INDEX_IN)-1._EB) > TWO_EPSILON_EB) THEN
+   IF (ABS(Y_IN(INDEX_IN)-1._EB) > TWENTY_EPSILON_EB) THEN
       DO NS=1,N_SPECIES
          IF (NS==INDEX_IN) CYCLE
          MW_RATIO = MW_RATIO + Y_IN(NS)/SPECIES(NS)%MW
       ENDDO
-      IF (MW_RATIO<=TWO_EPSILON_EB) THEN
+      IF (MW_RATIO<=TWENTY_EPSILON_EB) THEN
          MW_RATIO=SPECIES_MIXTURE(1)%MW
       ELSE
          MW_RATIO = (1._EB-Y_IN(INDEX_IN))/MW_RATIO
@@ -1754,12 +1583,12 @@ IF (PRESENT(Y_IN)) THEN
    ENDIF
    MW_RATIO = MW_RATIO/SPECIES(INDEX_IN)%MW
 ELSE
-   IF (ABS(Z_IN(INDEX_IN)-1._EB) > TWO_EPSILON_EB) THEN
+   IF (ABS(Z_IN(INDEX_IN)-1._EB) > TWENTY_EPSILON_EB) THEN
       DO NS=1,N_TRACKED_SPECIES
          IF (NS==INDEX_IN) CYCLE
          MW_RATIO = MW_RATIO + Z_IN(NS)/SPECIES_MIXTURE(NS)%MW
       ENDDO
-      IF (MW_RATIO<=TWO_EPSILON_EB) THEN
+      IF (MW_RATIO<=TWENTY_EPSILON_EB) THEN
          MW_RATIO=SPECIES_MIXTURE(1)%MW
       ELSE
          MW_RATIO = (1._EB-Z_IN(INDEX_IN))/MW_RATIO
@@ -1784,7 +1613,7 @@ REAL(EB):: DHOR
 H_V=H_V_DATA(MIN(I_MAX_TEMP,NINT(TMP_L)))
 H_V_EFF=H_V_DATA(MIN(I_MAX_TEMP,NINT(T_BOIL_EFF)))
 DHOR = H_V_EFF*MW/R0
-T_BOIL_EFF = MAX(0._EB,DHOR*T_BOIL_EFF/(DHOR-T_BOIL_EFF*LOG(PRES_IN/P_STP)+TWO_EPSILON_EB))
+T_BOIL_EFF = MAX(0._EB,DHOR*T_BOIL_EFF/(DHOR-T_BOIL_EFF*LOG(PRES_IN/P_STP)+TWENTY_EPSILON_EB))
 H_V_EFF=H_V_DATA(MIN(I_MAX_TEMP,NINT(T_BOIL_EFF)))
 H_V_EFF = 0.5_EB*(H_V+H_V_EFF)
 X_EQ = MIN(1._EB,EXP(H_V_EFF*MW/R0*(1._EB/T_BOIL_EFF-1._EB/TMP_L)))
@@ -2017,7 +1846,7 @@ ELSE
          VOL = (THICKNESS+SF%INNER_RADIUS-SF%X_S(I-1))**SF%I_GRAD - (THICKNESS+SF%INNER_RADIUS-SF%X_S(I))**SF%I_GRAD
       ENDIF
       MATL_REMESH: DO N=1,SF%N_MATL
-         IF (SF%RHO_0(I,N)<=TWO_EPSILON_EB) CYCLE MATL_REMESH
+         IF (SF%RHO_0(I,N)<=TWENTY_EPSILON_EB) CYCLE MATL_REMESH
          ML  => MATERIAL(SF%MATL_INDEX(N))
          H_S = ML%H(ITMP)+DTMP*(ML%H(ITMP+1)-ML%H(ITMP))
          RHO_H = RHO_H + SF%RHO_0(I,N) * H_S * VOL
@@ -2106,7 +1935,7 @@ EMISSIVITY = 0._EB
 VOLSUM     = 0._EB
 
 DO N=1,ONE_D%N_MATL
-   IF (ONE_D%MATL_COMP(N)%RHO(NODE_INDEX)<=TWO_EPSILON_EB) CYCLE
+   IF (ONE_D%MATL_COMP(N)%RHO(NODE_INDEX)<=TWENTY_EPSILON_EB) CYCLE
    ML => MATERIAL(ONE_D%MATL_INDEX(N))
    VOLSUM  = VOLSUM  + ONE_D%MATL_COMP(N)%RHO(NODE_INDEX)/ML%RHO_S
    EMISSIVITY = EMISSIVITY + ONE_D%MATL_COMP(N)%RHO(NODE_INDEX)*ML%EMISSIVITY/ML%RHO_S
@@ -2139,8 +1968,8 @@ CP_LOOP: DO ! Newton method to find solution of T (and hence cpbar) from enthalp
    ENDIF
    CP = HGAS / TGUESS
    TMP =TGUESS+(ETOT-HGAS)/(CP+TGUESS*DCPDT)
-   IF (ABS(TMP - TGUESS) < TWO_EPSILON_EB) EXIT CP_LOOP
-   IF (ABS(TMP - TGUESS)/(TMP+TWO_EPSILON_EB) < 0.0005_EB) EXIT CP_LOOP
+   IF (ABS(TMP - TGUESS) < TWENTY_EPSILON_EB) EXIT CP_LOOP
+   IF (ABS(TMP - TGUESS)/(TMP+TWENTY_EPSILON_EB) < 0.0005_EB) EXIT CP_LOOP
    IF (ITCOUNT > 10) THEN
       TMP = 0.5_EB*(TMP+TGUESS)
       EXIT CP_LOOP
@@ -2196,7 +2025,7 @@ INTEGER, INTENT(IN) :: DRAG_LAW
 REAL(EB), INTENT(IN) :: RE
 REAL(EB), OPTIONAL, INTENT(IN) :: KN
 
-IF (RE<TWO_EPSILON_EB) THEN
+IF (RE<TWENTY_EPSILON_EB) THEN
    DRAG = 0._EB
    RETURN
 ENDIF
@@ -2442,13 +2271,13 @@ ENDDO
 LAT_CDF=0._EB
 ! Latitude distribution conditional on Longtitude
 DO I=1,NPT
-   LAT_CDF(I,:)=LAT_CDF(I-1,:)+0.5*(PDF(I,:)+PDF(I-1,:))*DLAT
+   LAT_CDF(I,:)=LAT_CDF(I-1,:)+0.5_EB*(PDF(I,:)+PDF(I-1,:))*DLAT
 ENDDO
 
 ! Marginal longtitude distribution
 LON_CDF=0._EB
 DO I=1,NPT
-   LON_CDF(I)=LON_CDF(I-1)+0.5*(LAT_CDF(NPT,I-1)+LAT_CDF(NPT,I))*DLON
+   LON_CDF(I)=LON_CDF(I-1)+0.5_EB*(LAT_CDF(NPT,I-1)+LAT_CDF(NPT,I))*DLON
 ENDDO
 
 ! Normalize marginal longtitude distribution
@@ -2583,7 +2412,7 @@ REAL(EB),PARAMETER :: T_BOIL=373.15_EB,DHOR_T_B=4916.346083_EB
 
 DHOR_T = (H_V_H2O(INT(TEMP))+(TEMP-REAL(INT(TEMP,EB)))*(H_V_H2O(INT(TEMP)+1)-H_V_H2O(INT(TEMP))))*MW_H2O/R0
 P_RATIO = PZONE/P_STP
-T_BOIL_EFF = MAX(0._EB,DHOR_T_B*T_BOIL/(DHOR_T_B-T_BOIL*LOG(P_RATIO)+TWO_EPSILON_EB))
+T_BOIL_EFF = MAX(0._EB,DHOR_T_B*T_BOIL/(DHOR_T_B-T_BOIL*LOG(P_RATIO)+TWENTY_EPSILON_EB))
 DHOR = 0.5_EB*((H_V_H2O(INT(T_BOIL_EFF))+(T_BOIL_EFF-REAL(INT(T_BOIL_EFF,EB)))*&
        (H_V_H2O(INT(T_BOIL_EFF)+1)-H_V_H2O(INT(T_BOIL_EFF))))*MW_H2O/R0+DHOR_T)
 X_SAT  = MIN(1._EB,EXP(DHOR*(1._EB/T_BOIL_EFF-1._EB/TEMP)))
@@ -2601,7 +2430,7 @@ REAL (EB) :: X_SAT,X_H2O,DHOR,DHOR_T,T_BOIL_EFF,P_RATIO
 REAL(EB),PARAMETER :: T_BOIL=373.15_EB,DHOR_T_B=4916.346083_EB
 
 P_RATIO = PZONE/P_STP
-T_BOIL_EFF = MAX(0._EB,DHOR_T_B*T_BOIL/(DHOR_T_B-T_BOIL*LOG(P_RATIO)+TWO_EPSILON_EB))
+T_BOIL_EFF = MAX(0._EB,DHOR_T_B*T_BOIL/(DHOR_T_B-T_BOIL*LOG(P_RATIO)+TWENTY_EPSILON_EB))
 IF (TEMP >= T_BOIL_EFF) THEN
    X_SAT = 1._EB
 ELSE
@@ -2861,7 +2690,7 @@ SUM_FILM = SUM(Y_FILM)
 SUM_GAS = SUM(Y_GAS)
 OM_SUM_FILM = 1._EB-SUM_FILM
 
-IF (OM_SUM_FILM<TWO_EPSILON_EB) THEN
+IF (OM_SUM_FILM<TWENTY_EPSILON_EB) THEN
    ! If film is all vapor, just set the film Z to the vapor mass fractions.
    ZZ_FILM = 0._EB
    LOOP1: DO I=1,N_VAP
@@ -2870,7 +2699,7 @@ IF (OM_SUM_FILM<TWO_EPSILON_EB) THEN
    ENDDO LOOP1
 ELSE
    ! Determine the additional mass fraction of tracked species for each vapor species present
-   IF (ABS(SUM_GAS-1._EB) < TWO_EPSILON_EB) THEN
+   IF (ABS(SUM_GAS-1._EB) < TWENTY_EPSILON_EB) THEN
       ZZ_FILM = 0._EB
       DO I=1,N_VAP
          ZZ_FILM(ZZ_INDEX(I)) = Y_FILM(I)
@@ -2879,7 +2708,7 @@ ELSE
    ELSE
       ZZ_FILM = ZZ_GAS
       LOOP2: DO I=1,N_VAP
-         IF (ZZ_INDEX(I)==0 .OR. Y_FILM(I)<TWO_EPSILON_EB) CYCLE LOOP2
+         IF (ZZ_INDEX(I)==0 .OR. Y_FILM(I)<TWENTY_EPSILON_EB) CYCLE LOOP2
          ZZ_FILM(ZZ_INDEX(I)) = ZZ_GAS(ZZ_INDEX(I)) + &
                                 (Y_FILM(I)*(1._EB-SUM_GAS+Y_GAS(I))+Y_GAS(I)*(SUM_FILM-Y_FILM(I)-1._EB))/OM_SUM_FILM
       ENDDO LOOP2
@@ -2897,12 +2726,12 @@ CALL GET_SPECIFIC_GAS_CONSTANT(ZZ_FILM,R_FILM)
 
 X_SUM = 0._EB
 LOOP3: DO I=1,N_VAP
-   IF (ZZ_INDEX(I)==0 .OR. Y_FILM(I)<TWO_EPSILON_EB) CYCLE LOOP3
+   IF (ZZ_INDEX(I)==0 .OR. Y_FILM(I)<TWENTY_EPSILON_EB) CYCLE LOOP3
    D_FILM = D_Z(MIN(I_MAX_TEMP,NINT(TMP_FILM)),ZZ_INDEX(I))*ZZ_FILM(ZZ_INDEX(I))/SPECIES_MIXTURE(ZZ_INDEX(I))%MW
    X_SUM=X_SUM+ZZ_FILM(ZZ_INDEX(I))/SPECIES_MIXTURE(ZZ_INDEX(I))%MW
 ENDDO LOOP3
 
-IF (X_SUM > TWO_EPSILON_EB) THEN
+IF (X_SUM > TWENTY_EPSILON_EB) THEN
    D_FILM = D_FILM/X_SUM
 ELSE
    D_FILM = D_Z(NINT(TMPA),1)
@@ -2935,11 +2764,11 @@ Y_SV = 0._EB
 !Zero out tracked species that are liquid vapors and get the MW of what is left
 
 Y_ALL_LOOP: DO I=1,N_MATS
-   IF (X_SV(I) < TWO_EPSILON_EB) CYCLE
+   IF (X_SV(I) < TWENTY_EPSILON_EB) CYCLE
    ZZ_2(SMIX_INDEX(I))=0._EB
 ENDDO Y_ALL_LOOP
 
-IF (SUM(ZZ_2) > TWO_EPSILON_EB) THEN
+IF (SUM(ZZ_2) > TWENTY_EPSILON_EB) THEN
    ZZ_2 = ZZ_2 / SUM(ZZ_2)
    MW_DRY = 0._EB
    DO I=1,N_TRACKED_SPECIES
@@ -2966,36 +2795,37 @@ END SUBROUTINE GET_Y_SURF
 
 SUBROUTINE GET_TMP_REF(N_MATL,NR)
 INTEGER, INTENT(IN) :: N_MATL,NR
-REAL(EB) :: HEATING_RATE,DT=0.01_EB,DTDT,RR_MAX,REACTION_RATE,TMP,RHO_S
+REAL(EB) :: HEATING_RATE,DTMP=0.01_EB,DT,DTMPDT,RR_MAX,REACTION_RATE,TMP,RHO_S
 TYPE(MATERIAL_TYPE), POINTER :: ML
 
 ML=> MATERIAL(N_MATL)
 
 IF (ML%RATE_REF(NR) > 0._EB) THEN
-   HEATING_RATE = ML%RATE_REF(NR)
+   HEATING_RATE = ML%HEATING_RATE(NR)
 ELSE
    HEATING_RATE = TGA_HEATING_RATE
 ENDIF
 
 TMP = 0._EB
 ML%TMP_REF(NR) = 0._EB
-DTDT = HEATING_RATE/60._EB
+DTMPDT = HEATING_RATE/60._EB
+DT = DTMP/DTMPDT
 RHO_S = ML%RHO_S
-IF (ABS(ML%E(NR)) < TWO_EPSILON_EB) THEN
+IF (ABS(ML%E(NR)) < TWENTY_EPSILON_EB) THEN
    RR_MAX = ML%A(NR)*RHO_S**ML%N_S(NR)
 ELSE
    RR_MAX = 0._EB
 ENDIF
 
 DO WHILE (INT(TMP)<I_MAX_TEMP)
-   TMP = TMP + DTDT * DT
+   TMP = TMP + DTMP
    REACTION_RATE = ML%A(NR)*RHO_S**ML%N_S(NR)*EXP(-ML%E(NR)/(R0*TMP))*TMP**ML%N_T(NR)*ML%X_O2_PYRO**ML%N_O2(NR)
    IF (REACTION_RATE > RR_MAX) THEN
       ML%TMP_REF(NR) = TMP
       RR_MAX = REACTION_RATE
    ENDIF
    RHO_S = RHO_S - REACTION_RATE * DT
-   IF (RHO_S<TWO_EPSILON_EB) EXIT
+   IF (RHO_S<TWENTY_EPSILON_EB) EXIT
 ENDDO
 
 END SUBROUTINE GET_TMP_REF
@@ -3063,7 +2893,7 @@ ENDIF
 
 I_HRRPUA = MIN(14,INT(HRRPUA*0.000005_EB))
 F_HRRPUA = MIN(15._EB,HRRPUA*0.000005_EB) - REAL(I_HRRPUA,EB)
-IF (F_HRRPUA < TWO_EPSILON_EB) THEN
+IF (F_HRRPUA < TWENTY_EPSILON_EB) THEN
    Q_REF_FIT = Q_INC
    RETURN
 ENDIF
@@ -3096,6 +2926,526 @@ ABSA_4 = ABSA_3(1)+ F_HOC * (ABSA_3(2) - ABSA_3(1))
 Q_REF_FIT = QFLA_4*1000._EB + Q_INC * (1._EB - ABSA_4)
 
 END FUNCTION Q_REF_FIT
+
+
+!> \brief Compute the convective heat transfer coefficient
+!> \param NM Mesh number
+!> \param T Current time (s)
+!> \param DELTA_N_TMP Difference between gas and surface temperature (K)
+!> \param SF SURFACE derived type variable
+!> \param WALL_INDEX_IN Optional wall cell index
+!> \param CFACE_INDEX_IN Optional cface index
+!> \param PARTICLE_INDEX_IN Optional particle index
+!> \param BACK_SIDE Optional flag indicating if the surface is on the back side of the obstruction
+!> \param SKIP_BLOWING Optional flag indicating to not perform blowing correction (gauge imbedded in a blowing surface)
+
+REAL(EB) FUNCTION HEAT_TRANSFER_COEFFICIENT(NM,T,DELTA_N_TMP,SF,WALL_INDEX_IN,CFACE_INDEX_IN,PARTICLE_INDEX_IN,BACK_SIDE,&
+                                            SKIP_BLOWING)
+
+REAL(EB), INTENT(IN) :: DELTA_N_TMP,T
+INTEGER, INTENT(IN) :: NM
+INTEGER, INTENT(IN), OPTIONAL :: WALL_INDEX_IN,PARTICLE_INDEX_IN,CFACE_INDEX_IN
+LOGICAL, INTENT(IN), OPTIONAL :: BACK_SIDE,SKIP_BLOWING
+LOGICAL :: BLOWING
+INTEGER  :: SURF_GEOMETRY,ITMP,I,HTR
+REAL(EB) :: RE,H_NATURAL,H_FORCED,FRICTION_VELOCITY=0._EB,YPLUS=0._EB,ZSTAR,DN,TMP_FILM,MU_G,K_G,CP_G,&
+            R_DROP,CONV_LENGTH,GR,RA,NUSSELT_FORCED,NUSSELT_FREE,NUSSELT_IMPINGE,PHI,XX,H_FIXED
+INTEGER, PARAMETER :: NATURAL=1,FORCED=2,IMPACT=3,RESOLVED=4
+TYPE(MESH_TYPE), POINTER :: M
+TYPE(SURFACE_TYPE), INTENT(IN), POINTER :: SF
+TYPE(WALL_TYPE), POINTER :: WC
+TYPE(CFACE_TYPE), POINTER :: CFA
+TYPE(LAGRANGIAN_PARTICLE_TYPE), POINTER :: LP
+TYPE(BOUNDARY_PROP1_TYPE), POINTER :: B1
+TYPE(BOUNDARY_PROP2_TYPE), POINTER :: B2
+TYPE(BOUNDARY_COORD_TYPE), POINTER :: BC
+
+M => MESHES(NM)
+CONV_LENGTH = SF%CONV_LENGTH
+IF (PRESENT(BACK_SIDE)) THEN
+   H_FIXED = SF%H_FIXED_B
+ELSE
+   H_FIXED = SF%H_FIXED
+ENDIF
+
+IF (PRESENT(SKIP_BLOWING)) THEN
+   BLOWING = .NOT. SKIP_BLOWING
+ELSE
+   BLOWING = SF%BLOWING
+ENDIF
+
+! Determine if this is a particle or wall cell
+
+IF (PRESENT(PARTICLE_INDEX_IN)) THEN
+   LP => M%LAGRANGIAN_PARTICLE(PARTICLE_INDEX_IN)
+   B1 => M%BOUNDARY_PROP1(LP%B1_INDEX)
+   IF (LAGRANGIAN_PARTICLE_CLASS(LP%CLASS_INDEX)%INCLUDE_BOUNDARY_PROP2_TYPE) B2 => M%BOUNDARY_PROP2(LP%B2_INDEX)
+   BC => M%BOUNDARY_COORD(LP%BC_INDEX)
+   DN = SF%CONV_LENGTH
+   R_DROP = LP%RADIUS
+   IF (R_DROP>TWENTY_EPSILON_EB .AND. SF%GEOMETRY/=SURF_CARTESIAN) CONV_LENGTH = 2._EB*R_DROP
+ELSEIF (PRESENT(WALL_INDEX_IN)) THEN
+   WC => M%WALL(WALL_INDEX_IN)
+   B1 => M%BOUNDARY_PROP1(WC%B1_INDEX)
+   B2 => M%BOUNDARY_PROP2(WC%B2_INDEX)
+   BC => M%BOUNDARY_COORD(WC%BC_INDEX)
+   DN = 1._EB/B1%RDN
+ELSEIF (PRESENT(CFACE_INDEX_IN)) THEN
+   CFA => M%CFACE(CFACE_INDEX_IN)
+   B1 => M%BOUNDARY_PROP1(CFA%B1_INDEX)
+   B2 => M%BOUNDARY_PROP2(CFA%B2_INDEX)
+   BC => M%BOUNDARY_COORD(CFA%BC_INDEX)
+   DN = 1._EB/B1%RDN
+ELSE
+   IF (H_FIXED >= 0._EB) THEN
+      CALL CONSTANT_HTC
+   ELSE
+      HEAT_TRANSFER_COEFFICIENT = 1.31_EB*ABS(DELTA_N_TMP)**ONTH  ! Natural convection for vertical plane, Holman, 10th, Tab. 7.2
+   ENDIF
+   RETURN
+ENDIF
+
+! Calculate HEAT_TRANSFER_COEFFICIENT
+
+TMP_FILM = B1%TMP_F+SF%FILM_FACTOR*(B1%TMP_G-B1%TMP_F)
+
+! If the user wants a specified HTC, set it and return
+
+H_FIXED_IF: IF (H_FIXED >= 0._EB .AND. SF%HEAT_TRANSFER_MODEL/=IMPINGING_JET_HTC_MODEL) THEN
+
+   CALL CONSTANT_HTC
+
+ELSE H_FIXED_IF
+
+   ! Either do a DNS /SOLID_PHASE_ONLY calcuation or an LES / non-SOLID_PHASE_ONLY calculation.
+   ! If this is a DNS calculation at a solid wall, set HTC and return. If SOLID_PHASE do not return until after blowing check.
+
+   HTC_TYPE_IF: IF ( (SIM_MODE==DNS_MODE .OR. SOLID_PHASE_ONLY) .AND. (PRESENT(WALL_INDEX_IN) .OR. PRESENT(CFACE_INDEX_IN)) ) THEN
+
+      HEAT_TRANSFER_COEFFICIENT = 2._EB * B1%K_G * B1%RDN
+      IF (SIM_MODE==DNS_MODE) RETURN
+
+   ELSE HTC_TYPE_IF
+
+      CALL GET_VISCOSITY(B1%ZZ_G,MU_G,TMP_FILM)
+      CALL GET_CONDUCTIVITY(B1%ZZ_G,K_G,TMP_FILM)
+
+      HTC_MODEL_SELECT: SELECT CASE(SF%HEAT_TRANSFER_MODEL)
+         CASE(DEFAULT_HTC_MODEL,IMPINGING_JET_HTC_MODEL)
+            RE = B1%RHO_G*B1%U_TANG*CONV_LENGTH/MU_G
+            GR = GRAV*ABS(DELTA_N_TMP)*CONV_LENGTH**3*(B1%RHO_G/MU_G)**2/TMP_FILM
+            IF (SF%BOUNDARY_FUEL_MODEL) THEN
+               SURF_GEOMETRY = SURF_CYLINDRICAL
+            ELSE
+               SURF_GEOMETRY = SF%GEOMETRY
+            ENDIF
+            ! Check if custom Nusselt correlation is defined
+            IF (ANY((/SF%NUSSELT_C0,SF%NUSSELT_C1,SF%NUSSELT_C2,SF%NUSSELT_M/)>0._EB)) THEN
+               CALL FORCED_CONVECTION_MODEL(NUSSELT_FORCED,RE,PR_ONTH,SURF_GEOMETRY,&
+                  SF%NUSSELT_C0,SF%NUSSELT_C1,SF%NUSSELT_C2,SF%NUSSELT_M)
+            ELSE
+               CALL FORCED_CONVECTION_MODEL(NUSSELT_FORCED,RE,PR_ONTH,SURF_GEOMETRY)
+            ENDIF
+            RA = GR*PR_AIR
+            CALL NATURAL_CONVECTION_MODEL(NUSSELT_FREE,RA,SF,BC%IOR,DELTA_N_TMP)
+            NUSSELT_IMPINGE = 0._EB
+            IF (SF%HEAT_TRANSFER_MODEL==IMPINGING_JET_HTC_MODEL) THEN
+               XX = SQRT( (SF%XYZ(1)-BC%X)**2 + (SF%XYZ(2)-BC%Y)**2 + (SF%XYZ(3)-BC%Z)**2 )
+               NUSSELT_IMPINGE = SF%H_FIXED*EXP(-0.5_EB * (XX / SF%HTC_SIGMA)**2) * CONV_LENGTH/K_G
+            ENDIF
+            IF (PRESENT(PARTICLE_INDEX_IN)) THEN
+               HEAT_TRANSFER_COEFFICIENT = MAX(NUSSELT_FORCED,NUSSELT_FREE)*K_G/CONV_LENGTH
+               ! BOUNDARY_PROP2 not allocated for particles
+            ELSE
+               B2%HEAT_TRANSFER_REGIME=MAXLOC((/NUSSELT_FREE,NUSSELT_FORCED,NUSSELT_IMPINGE,2._EB*CONV_LENGTH/DN/),DIM=1)
+               SELECT CASE(B2%HEAT_TRANSFER_REGIME)
+                  CASE(NATURAL)
+                     B2%Z_STAR = NUSSELT_FREE**0.25_EB
+                  CASE(FORCED)
+                     B2%Z_STAR = SQRT(NUSSELT_FORCED)
+                  CASE(IMPACT)
+                     B2%Z_STAR = SQRT(NUSSELT_IMPINGE)
+                  CASE(RESOLVED)
+                     B2%Z_STAR = 1._EB
+               END SELECT
+               HEAT_TRANSFER_COEFFICIENT = MAX(NUSSELT_FREE,NUSSELT_FORCED,NUSSELT_IMPINGE,2._EB*CONV_LENGTH/DN)*K_G/CONV_LENGTH
+            ENDIF
+         CASE(LOGLAW_HTC_MODEL)
+            CALL GET_SPECIFIC_HEAT(B1%ZZ_G,CP_G,TMP_FILM)
+            FRICTION_VELOCITY = B2%U_TAU
+            YPLUS = B2%Y_PLUS
+            CALL LOGLAW_HEAT_FLUX_MODEL(H_FORCED,YPLUS,FRICTION_VELOCITY,K_G,B1%RHO_G,CP_G,MU_G)
+            HEAT_TRANSFER_COEFFICIENT = H_FORCED
+         CASE(RAYLEIGH_HTC_MODEL)
+            ! not appropriate for a particle, used with SURF and CFACE only
+            CALL GET_SPECIFIC_HEAT(B1%ZZ_G,CP_G,TMP_FILM)
+            CALL RAYLEIGH_HEAT_FLUX_MODEL(H_NATURAL,ZSTAR,HTR,DN,B1%TMP_F,B1%TMP_G,K_G,B1%RHO_G,CP_G,MU_G,B1%U_TANG)
+            B2%Z_STAR = ZSTAR
+            B2%HEAT_TRANSFER_REGIME = HTR
+            HEAT_TRANSFER_COEFFICIENT = H_NATURAL
+         CASE(FM_HTC_MODEL)
+            CALL GET_SPECIFIC_HEAT(B1%ZZ_G,CP_G,TMP_FILM)
+            CALL FM_HEAT_FLUX_MODEL(H_NATURAL,DN,B1%TMP_F,B1%TMP_G,K_G,B1%RHO_G,CP_G)
+            HEAT_TRANSFER_COEFFICIENT = H_NATURAL
+      END SELECT HTC_MODEL_SELECT
+   ENDIF HTC_TYPE_IF
+ENDIF H_FIXED_IF
+
+IF (BLOWING .AND. .NOT. SF%BOUNDARY_FUEL_MODEL .AND. SIM_MODE /= DNS_MODE .AND. ALLOCATED(B1%M_DOT_G_PP_ACTUAL)) THEN
+   PHI = 0._EB
+   IF (SF%INCLUDE_BOUNDARY_PROP2_TYPE) B2%BLOWING_CORRECTION=0._EB
+   ITMP = INT(TMP_FILM)
+   DO I=1,N_TRACKED_SPECIES
+      IF (ABS(B1%M_DOT_G_PP_ACTUAL(I)) <= TWENTY_EPSILON_EB) CYCLE
+      PHI = PHI + B1%M_DOT_G_PP_ACTUAL(I)*CP_Z(ITMP,I)
+   ENDDO
+   IF (ABS(PHI)>TWENTY_EPSILON_EB .AND. ABS(HEAT_TRANSFER_COEFFICIENT)>=TWENTY_EPSILON_EB) THEN
+      PHI = PHI / HEAT_TRANSFER_COEFFICIENT
+      IF (PHI > 100._EB) THEN
+         HEAT_TRANSFER_COEFFICIENT = 0._EB
+      ELSE
+         HEAT_TRANSFER_COEFFICIENT = HEAT_TRANSFER_COEFFICIENT * PHI/(EXP(PHI)-1._EB)
+         IF (SF%INCLUDE_BOUNDARY_PROP2_TYPE) B2%BLOWING_CORRECTION = PHI/(EXP(PHI)-1._EB)
+      ENDIF
+   ENDIF
+ENDIF
+
+CONTAINS
+
+SUBROUTINE CONSTANT_HTC
+
+USE MATH_FUNCTIONS, ONLY: EVALUATE_RAMP
+
+HEAT_TRANSFER_COEFFICIENT = H_FIXED
+IF (SF%RAMP_H_FIXED_INDEX>0) THEN
+   HEAT_TRANSFER_COEFFICIENT = HEAT_TRANSFER_COEFFICIENT*EVALUATE_RAMP(T-T_BEGIN,SF%RAMP_H_FIXED_INDEX)
+ELSE
+   HEAT_TRANSFER_COEFFICIENT = H_FIXED
+ENDIF
+
+END SUBROUTINE CONSTANT_HTC
+
+END FUNCTION HEAT_TRANSFER_COEFFICIENT
+
+
+!> \brief Calculate the Nusselt number for natural/free convection
+!> \param NUSSELT Nusselt number
+!> \param RA Rayleigh number
+!> \param SF Pointer to SURFACE derived type variable
+!> \param IOR Index of the surface orientation
+!> \param DELTA_TMP Temperature difference between gas and surface (K)
+
+SUBROUTINE NATURAL_CONVECTION_MODEL(NUSSELT,RA,SF,IOR,DELTA_TMP)
+
+REAL(EB), INTENT(OUT) :: NUSSELT
+REAL(EB), INTENT(IN) :: RA,DELTA_TMP
+INTEGER, INTENT(IN) :: IOR
+TYPE(SURFACE_TYPE), POINTER, INTENT(IN) :: SF
+
+SELECT CASE(SF%GEOMETRY)
+   CASE (SURF_CARTESIAN)
+      SELECT CASE(ABS(IOR))
+         CASE(0:2)
+            NUSSELT = (0.825_EB + 0.324_EB*RA**ONSI)**2  ! Incropera and DeWitt, 7th edition, Eq. 9.26
+         CASE(3)
+            IF ((IOR==3.AND.DELTA_TMP<0._EB) .OR. (IOR==-3.AND.DELTA_TMP>=0._EB)) THEN
+               IF (RA<1.E7_EB) THEN
+                  NUSSELT = 0.54_EB*RA**0.25_EB  ! Incropera and DeWitt, 7th edition, Eq. 9.30
+               ELSE
+                  NUSSELT = 0.15_EB*RA**ONTH     ! Incropera and DeWitt, 7th edition, Eq. 9.31
+               ENDIF
+            ELSE
+               NUSSELT = 0.52_EB*RA**0.2     ! Incropera and DeWitt, 7th edition, Eq. 9.32
+            ENDIF
+      END SELECT
+   CASE (SURF_CYLINDRICAL,SURF_INNER_CYLINDRICAL)  ! Simplification of Eq. 9.34, Incropera and DeWitt, 7th edition
+      IF (SF%HORIZONTAL) THEN
+         NUSSELT = (0.6_EB + 0.321_EB*RA**ONSI)**2   ! Incropera and DeWitt, 7th edition, Eq. 9.34
+      ELSE
+         NUSSELT = (0.825_EB + 0.324_EB*RA**ONSI)**2 ! Incropera and DeWitt, 7th edition, Eq. 9.26
+      ENDIF
+   CASE (SURF_SPHERICAL)
+      NUSSELT = 2._EB + 0.454_EB*RA**0.25_EB  ! Incropera and DeWitt, 7th edition, Eq. 9.35
+END SELECT
+
+END SUBROUTINE NATURAL_CONVECTION_MODEL
+
+
+!> \brief Calculate the heat transfer coefficient for forced convection
+!> \param NUSSELT Nusselt number
+!> \param RE Reynolds number
+!> \param PR_ONTH_IN Prandtl number to the 1/3 power
+!> \param SURF_GEOMETRY_INDEX Indicator of the surface geometry
+!> \param NUSSELT_C0 Constant in Nusselt number correlation
+!> \param NUSSELT_C1 Constant in Nusselt number correlation
+!> \param NUSSELT_C2 Constant in Nusselt number correlation
+!> \param NUSSELT_M Exponent in Nusselt number correlation
+
+SUBROUTINE FORCED_CONVECTION_MODEL(NUSSELT,RE,PR_ONTH_IN,SURF_GEOMETRY_INDEX,NUSSELT_C0,NUSSELT_C1,NUSSELT_C2,NUSSELT_M)
+
+REAL(EB), INTENT(OUT) :: NUSSELT
+REAL(EB), INTENT(IN) :: RE,PR_ONTH_IN
+REAL(EB), INTENT(IN), OPTIONAL :: NUSSELT_C0,NUSSELT_C1,NUSSELT_C2,NUSSELT_M
+INTEGER, INTENT(IN) :: SURF_GEOMETRY_INDEX
+
+
+IF (PRESENT(NUSSELT_C0)) THEN ! User has defined a custom Nusselt correlation
+   NUSSELT = NUSSELT_C0+(NUSSELT_C1*RE**NUSSELT_M-NUSSELT_C2)*PR_ONTH_IN
+ELSE
+   SELECT CASE(SURF_GEOMETRY_INDEX)
+      CASE (SURF_CARTESIAN)
+         NUSSELT = 0.0296_EB*RE**0.8_EB*PR_ONTH_IN  ! Incropera and DeWitt, 7th, Eq. 7.36, Table 7.7
+      CASE (SURF_CYLINDRICAL,SURF_INNER_CYLINDRICAL)
+         ! Incropera and DeWitt, 7th, Eq. 7.52
+         IF (RE >= 40000._EB) THEN
+            NUSSELT = 0.027_EB*RE**0.805_EB*PR_ONTH_IN
+         ELSEIF (RE >= 4000._EB) THEN
+            NUSSELT = 0.193_EB*RE**0.618_EB*PR_ONTH_IN
+         ELSEIF (RE >= 40._EB) THEN
+            NUSSELT = 0.683_EB*RE**0.466_EB*PR_ONTH_IN
+         ELSEIF (RE >= 4._EB) THEN
+            NUSSELT = 0.911_EB*RE**0.385_EB*PR_ONTH_IN
+         ELSE
+            NUSSELT = 0.989_EB*RE**0.330_EB*PR_ONTH_IN
+         ENDIF
+      CASE (SURF_SPHERICAL)
+         NUSSELT = 2._EB + 0.6_EB*SQRT(RE)*PR_ONTH_IN  ! Incropera and DeWitt, 7th, Eq. 7.57
+   END SELECT
+ENDIF
+
+END SUBROUTINE FORCED_CONVECTION_MODEL
+
+
+SUBROUTINE RAYLEIGH_HEAT_FLUX_MODEL(H,Z_STAR,REGIME,DZ,TMP_W,TMP_G,K_G,RHO_G,CP_G,MU_G,VEL_G)
+
+!!!!! EXPERIMENTAL !!!!!
+
+! Rayleigh number scaling in nondimensional thermal wall units
+!
+! The formulation is based on the discussion of natural convection systems in
+! J.P. Holman, Heat Transfer, 10th Ed., McGraw-Hill, 2010, Sec. 7-4.
+
+REAL(EB), INTENT(OUT) :: H,Z_STAR
+REAL(EB), INTENT(IN) :: DZ,TMP_W,TMP_G,K_G,RHO_G,CP_G,MU_G,VEL_G
+REAL(EB) :: NUSSELT,Q,ZC,NU_G,ALPHA_G,PR_G,D_STAR_FORCED,D_STAR_NATURAL,THETA_NATURAL,THETA_FORCED,&
+            Q_OLD,ERROR,DTMP !,DTDN(3)
+INTEGER, INTENT(OUT) :: REGIME
+INTEGER :: ITER
+INTEGER, PARAMETER :: MAX_ITER=10,NATURAL=1,FORCED=2
+REAL(EB), PARAMETER :: EIGHT_NINETHS = 8._EB/9._EB
+
+REAL(EB), PARAMETER :: Z_L_NATURAL = 3.2_EB, Z_T_NATURAL=17._EB
+REAL(EB), PARAMETER :: C_L_NATURAL = Z_L_NATURAL**(-0.8_EB), C_T_NATURAL = C_L_NATURAL*Z_T_NATURAL**(0.8_EB-1._EB)
+
+REAL(EB), PARAMETER :: Z_L_FORCED = 8._EB, Z_T_FORCED = 80._EB
+REAL(EB), PARAMETER :: C_L_FORCED = Z_L_FORCED**(-2._EB/3._EB), C_T_FORCED = C_L_FORCED * Z_T_FORCED**(2._EB/3._EB-8._EB/9._EB)
+
+IF (ABS(TMP_W-TMP_G)<TWENTY_EPSILON_EB) THEN
+   H = 0._EB
+   Z_STAR = 0._EB
+   REGIME = 0
+   RETURN
+ENDIF
+
+ZC = 0.5_EB*DZ
+NU_G = MU_G/RHO_G
+ALPHA_G = K_G/(RHO_G*CP_G)
+PR_G = NU_G/ALPHA_G
+
+THETA_NATURAL = 0.5_EB*(TMP_W+TMP_G)*K_G*ALPHA_G*NU_G/(GRAV+TWENTY_EPSILON_EB)
+THETA_FORCED  =     ABS(TMP_W-TMP_G)*K_G*ALPHA_G/(VEL_G+TWENTY_EPSILON_EB)
+
+! ! needed if NATURAL
+! DTDN = (TMP_G-TMP_W)/ZC * NVEC
+! IF (DOT_PRODUCT(DTDN,GVEC) > -TWENTY_EPSILON_EB) THEN
+!    EXPON_TURB=1._EB
+! ELSE
+!    EXPON_TURB=0.8_EB
+! ENDIF
+
+! Step 1: assume a heat transfer coefficient
+
+H = K_G/ZC ! initial guess
+DTMP = ABS(TMP_W-TMP_G)
+Q = H*DTMP ! Q > 0. in this routine
+
+Q_LOOP: DO ITER=1,MAX_ITER
+
+   ! Step 2: compute new thermal diffusive length scale, delta*
+   D_STAR_NATURAL = (THETA_NATURAL/Q)**0.25_EB
+   D_STAR_FORCED  = SQRT(THETA_FORCED/Q)
+
+   REGIME=MINLOC((/D_STAR_NATURAL,D_STAR_FORCED/),DIM=1)
+
+   ! Set REGIME based on minimum delta*
+
+   REGIME_SELECT: SELECT CASE(REGIME)
+
+      CASE(NATURAL)
+
+         ! Step 3: compute new z* (thermal)
+         Z_STAR = ZC/D_STAR_NATURAL
+
+         ! Step 4: based on z*, choose scaling law
+         IF (Z_STAR<=Z_L_NATURAL) THEN
+            NUSSELT = 1._EB
+         ELSEIF (Z_STAR>Z_L_NATURAL .AND. Z_STAR<=Z_T_NATURAL) THEN
+            NUSSELT = C_L_NATURAL * Z_STAR**0.8_EB
+         ELSE
+            NUSSELT = C_T_NATURAL * Z_STAR !**EXPON_TURB
+         ENDIF
+
+      CASE(FORCED)
+
+         ! Step 3: compute new z* (thermal)
+         Z_STAR = ZC/D_STAR_FORCED
+
+         ! Step 4: based on z*, choose scaling law
+         IF (Z_STAR<=Z_L_FORCED) THEN
+            NUSSELT = 1._EB
+         ELSEIF (Z_STAR>Z_L_FORCED .AND. Z_STAR<=Z_T_FORCED) THEN
+            NUSSELT = C_L_FORCED * Z_STAR**TWTH
+         ELSE
+            NUSSELT = C_T_FORCED * Z_STAR**EIGHT_NINETHS
+         ENDIF
+
+   END SELECT REGIME_SELECT
+
+   ! Step 5: update heat transfer coefficient
+   H = NUSSELT*K_G/ZC
+   Q_OLD = Q
+   Q = H*DTMP
+
+   ERROR = ABS(Q-Q_OLD)/MAX(Q_OLD,TWENTY_EPSILON_EB)
+   IF (ERROR<0.001_EB) EXIT Q_LOOP
+
+ENDDO Q_LOOP
+
+END SUBROUTINE RAYLEIGH_HEAT_FLUX_MODEL
+
+
+SUBROUTINE RAYLEIGH_MASS_FLUX_MODEL(H_MASS,Z_STAR,DZ,B_NUMBER,D_FILM,RHO_FILM,MU_FILM)
+
+!!!!! EXPERIMENTAL !!!!!
+
+! Rayleigh number scaling in nondimensional mass transfer wall units
+!
+! The formulation is based on the discussion of natural convection systems in
+! J.P. Holman, Heat Transfer, 10th Ed., McGraw-Hill, 2010, Sec. 7-4.
+
+REAL(EB), INTENT(OUT) :: H_MASS,Z_STAR
+REAL(EB), INTENT(IN) :: DZ,B_NUMBER,D_FILM,RHO_FILM,MU_FILM
+REAL(EB) :: SHERWOOD,ZC,NU_FILM,D_STAR,MFLUX_OLD,ERROR,D_STAR_FAC,MFLUX
+INTEGER :: ITER
+INTEGER, PARAMETER :: MAX_ITER=10
+! C_L = Z_L**(-0.8_EB)
+! C_T = C_L*Z_T**(-0.2_EB)
+REAL(EB), PARAMETER :: Z_L = 3.2_EB, Z_T=17._EB
+REAL(EB), PARAMETER :: C_L = 3.2_EB**(-0.8_EB), C_T = C_L*17._EB**(-0.2_EB)
+
+IF (B_NUMBER<TWENTY_EPSILON_EB) THEN
+   MFLUX = 0._EB
+   RETURN
+ENDIF
+
+ZC = 0.5_EB*DZ
+NU_FILM = MU_FILM/RHO_FILM
+D_STAR_FAC = RHO_FILM*D_FILM**2*NU_FILM/GRAV
+
+! Step 1: assume a mass transfer coefficient
+
+H_MASS = D_FILM/ZC ! initial guess
+
+! Step 2: compute initial MFLUX
+
+MFLUX = RHO_FILM*H_MASS*LOG(1._EB + B_NUMBER)
+
+RAYLEIGH_LOOP: DO ITER=1,MAX_ITER
+
+   ! Step 3: compute new mass diffusive length scale, delta*, from modified Grashof number * Sc
+
+   D_STAR = (D_STAR_FAC/MFLUX)**0.25_EB
+
+   ! Step 4: compute new z* (mass)
+
+   Z_STAR = ZC/D_STAR ! Ra* = (z*)**4
+
+   ! Step 5: based on z*, choose Ra scaling law
+
+   IF (Z_STAR<=Z_L) THEN
+      SHERWOOD = 1._EB
+   ELSEIF (Z_STAR>Z_L .AND. Z_STAR<=Z_T) THEN
+      SHERWOOD = C_L * Z_STAR**0.8_EB
+   ELSE
+      SHERWOOD = C_T * Z_STAR
+   ENDIF
+
+   ! Step 6: update mass transfer coefficient
+
+   H_MASS = SHERWOOD*D_FILM/ZC
+   MFLUX_OLD = MFLUX
+   MFLUX = RHO_FILM*H_MASS*LOG(1._EB + B_NUMBER)
+
+   ERROR = ABS(MFLUX-MFLUX_OLD)/MAX(MFLUX_OLD,TWENTY_EPSILON_EB)
+
+   IF (ERROR<0.001_EB) EXIT RAYLEIGH_LOOP
+
+ENDDO RAYLEIGH_LOOP
+
+END SUBROUTINE RAYLEIGH_MASS_FLUX_MODEL
+
+
+SUBROUTINE LOGLAW_HEAT_FLUX_MODEL(H,YPLUS,U_TAU,K_G,RHO_G,CP_G,MU_G)
+
+! Kiyoung Moon, Yonsei University
+! Ezgi Oztekin, Technology and Manangement International
+
+REAL(EB), INTENT(OUT) :: H
+REAL(EB), INTENT(IN) :: YPLUS,U_TAU,K_G,RHO_G,CP_G,MU_G
+REAL(EB) :: PR_M,TPLUS,B_T
+REAL(EB), PARAMETER :: RKAPPA=1._EB/0.41_EB
+
+PR_M = CP_G*MU_G/K_G
+
+IF (YPLUS < Y_WERNER_WENGLE) THEN
+   TPLUS = PR_M*YPLUS
+ELSE
+   B_T = (3.85_EB*PR_M**ONTH-1.3_EB)**2 + 2.12_EB*LOG(PR_M) ! Kader, 1981
+   TPLUS = PR_T*RKAPPA*LOG(YPLUS)+B_T
+ENDIF
+
+H = RHO_G*U_TAU*CP_G/TPLUS
+
+END SUBROUTINE LOGLAW_HEAT_FLUX_MODEL
+
+
+SUBROUTINE FM_HEAT_FLUX_MODEL(H,DN,TMP_W,TMP_G,K_G,RHO_G,CP_G)
+
+! Reference:
+! N. Ren, Y. Wang. A convective heat transfer model for LES fire modeling.
+! Proc. Combustion Institute, 38 (2021) 4535-4542.
+
+REAL(EB), INTENT(OUT) :: H
+REAL(EB), INTENT(IN) :: DN,TMP_W,TMP_G,K_G,RHO_G,CP_G
+REAL(EB) :: DTDN,ALPHA_W,Q,DD,C_GRAD
+REAL(EB), PARAMETER :: C1=175._EB, C2=-800._EB, LR=0.0015_EB
+
+IF (ABS(TMP_W-TMP_G)<TWENTY_EPSILON_EB) THEN
+   H = 0._EB
+   RETURN
+ENDIF
+
+! Currently, this model only contains the gradient correction.
+! Blowing correction will be added later.
+
+DTDN  = 2._EB*(TMP_W-TMP_G)/DN
+ALPHA_W = K_G/(RHO_G*CP_G)
+DD = MAX(0._EB,DN-LR)
+C_GRAD = 1._EB + MAX(0._EB, C1*DD + C2*DD**2)
+Q = RHO_G*CP_G*ALPHA_W*C_GRAD*DTDN
+H = Q/(TMP_W-TMP_G)
+
+END SUBROUTINE FM_HEAT_FLUX_MODEL
 
 END MODULE PHYSICAL_FUNCTIONS
 
@@ -4251,9 +4601,9 @@ IF (ALLOCATED(ONE_D%DX_OLD)) DEALLOCATE(ONE_D%DX_OLD)                         ; 
 IF (ALLOCATED(ONE_D%TMP)) DEALLOCATE(ONE_D%TMP)                               ; ALLOCATE(ONE_D%TMP(0:ONE_D%N_CELLS_MAX+1))
 IF (ALLOCATED(ONE_D%DELTA_TMP)) DEALLOCATE(ONE_D%DELTA_TMP)                   ; ALLOCATE(ONE_D%DELTA_TMP(0:ONE_D%N_CELLS_MAX+1))
 IF (ALLOCATED(ONE_D%LAYER_THICKNESS)) DEALLOCATE(ONE_D%LAYER_THICKNESS)       ; ALLOCATE(ONE_D%LAYER_THICKNESS(ONE_D%N_LAYERS))
-IF (ALLOCATED(ONE_D%LAYER_THICKNESS_OLD)) DEALLOCATE(ONE_D%LAYER_THICKNESS_OLD) 
+IF (ALLOCATED(ONE_D%LAYER_THICKNESS_OLD)) DEALLOCATE(ONE_D%LAYER_THICKNESS_OLD)
    ALLOCATE(ONE_D%LAYER_THICKNESS_OLD(ONE_D%N_LAYERS))
-IF (ALLOCATED(ONE_D%MIN_LAYER_THICKNESS)) DEALLOCATE(ONE_D%MIN_LAYER_THICKNESS)       
+IF (ALLOCATED(ONE_D%MIN_LAYER_THICKNESS)) DEALLOCATE(ONE_D%MIN_LAYER_THICKNESS)
    ALLOCATE(ONE_D%MIN_LAYER_THICKNESS(ONE_D%N_LAYERS))
 IF (ALLOCATED(ONE_D%MIN_LAYER_MASS)) DEALLOCATE(ONE_D%MIN_LAYER_MASS)         ; ALLOCATE(ONE_D%MIN_LAYER_MASS(ONE_D%N_LAYERS))
 IF (ALLOCATED(ONE_D%HT3D_LAYER)) DEALLOCATE(ONE_D%HT3D_LAYER)                 ; ALLOCATE(ONE_D%HT3D_LAYER(ONE_D%N_LAYERS))
@@ -5158,7 +5508,7 @@ REAL(EB), INTENT(IN) :: DIFFUSIVITY,LAYER_THICKNESS,STRETCH_FACTOR,CELL_SIZE_FAC
 INTEGER  :: N, I
 
 DX_MIN = 0._EB
-IF (LAYER_THICKNESS<=TWO_EPSILON_EB) THEN
+IF (LAYER_THICKNESS<=TWENTY_EPSILON_EB) THEN
    N_CELLS = 0
    DX_MIN = 0._EB
    RETURN
@@ -5404,6 +5754,7 @@ END SUBROUTINE GET_WALL_NODE_WEIGHTS
 
 !> \brief Determine weighting factors for 1-D solid cells
 !> \param GEOMETRY Indicator of surface geometry: Cartesian, cylindrical, or spherical
+!> \param I_GRAD Integer denoting exponent for geometry calculations: Cartesian=1, cylindrical=2, or spherical=3
 !> \param NWP Number of interior cells
 !> \param NWP_NEW Number of interior cells after shrinkage or swelling
 !> \param INNER_RADIUS Inner radius of hollow cylinder or sphere (m)
@@ -5643,7 +5994,7 @@ DO K=1,M%KBAR
    ENDDO
 ENDDO
 
-IF (FDS_VOLUME>TWO_EPSILON_EB) VOLUME_ADJUST = ACTUAL_VOLUME/FDS_VOLUME
+IF (FDS_VOLUME>TWENTY_EPSILON_EB) VOLUME_ADJUST = ACTUAL_VOLUME/FDS_VOLUME
 
 END SUBROUTINE BLOCK_MESH_INTERSECTION_VOLUME
 
@@ -5669,7 +6020,7 @@ FC = 0
 
 ! No overlap
 
-IF ((X2 <= X0-RAD) .OR. (X1 >= X0+RAD) .OR. (Y2 <= Y0-RAD) .OR. (Y1 >= Y0+RAD) .OR. RAD<TWO_EPSILON_EB) THEN
+IF ((X2 <= X0-RAD) .OR. (X1 >= X0+RAD) .OR. (Y2 <= Y0-RAD) .OR. (Y1 >= Y0+RAD) .OR. RAD<TWENTY_EPSILON_EB) THEN
    CIRCLE_CELL_INTERSECTION_AREA = 0._EB
    RETURN
 ENDIF
@@ -5691,22 +6042,22 @@ SELECT CASE(FC)
       ! Can only have one edge where this is the case without having a corner inside. This edge makes a chord.
       ! Intersection area is the area of the chord.
       IF (X2 <= X0 .AND. X2 > X0-RAD) THEN
-         THETA = 2._EB*ACOS((X0-X2)/RAD)         
+         THETA = 2._EB*ACOS((X0-X2)/RAD)
          CIRCLE_CELL_INTERSECTION_AREA = 0.5_EB*R2*(THETA-SIN(THETA))
          RETURN
       ENDIF
       IF (Y2 <= Y0 .AND. Y2 > Y0-RAD) THEN
-         THETA = 2._EB*ACOS((Y0-Y2)/RAD)         
+         THETA = 2._EB*ACOS((Y0-Y2)/RAD)
          CIRCLE_CELL_INTERSECTION_AREA = 0.5_EB*R2*(THETA-SIN(THETA))
          RETURN
       ENDIF
       IF (X1 >= X0 .AND. X1 < X0+RAD) THEN
-         THETA = 2._EB*ACOS((X1-X0)/RAD)         
+         THETA = 2._EB*ACOS((X1-X0)/RAD)
          CIRCLE_CELL_INTERSECTION_AREA = 0.5_EB*R2*(THETA-SIN(THETA))
          RETURN
       ENDIF
       IF (Y1 >= Y0 .AND. Y1 < Y0+RAD) THEN
-         THETA = 2._EB*ACOS((Y1-Y0)/RAD)         
+         THETA = 2._EB*ACOS((Y1-Y0)/RAD)
          CIRCLE_CELL_INTERSECTION_AREA = 0.5_EB*R2*(THETA-SIN(THETA))
          RETURN
       ENDIF
@@ -5846,8 +6197,8 @@ HH_IN = Z_MAX-Z_MIN
 IF (X_MAX<=X_MIN .OR. Y_MAX<=Y_MIN .OR. Z_MAX<=Z_MIN) RETURN
 
 ! Case 2: base area fully inside the mesh
-IF ((X_MIN-M%XS)>TWO_EPSILON_EB .AND. (M%XF-X_MAX)>TWO_EPSILON_EB &
-   .AND. (Y_MIN-M%YS)>TWO_EPSILON_EB .AND. (M%YF-Y_MAX)>TWO_EPSILON_EB) THEN
+IF ((X_MIN-M%XS)>TWENTY_EPSILON_EB .AND. (M%XF-X_MAX)>TWENTY_EPSILON_EB &
+   .AND. (Y_MIN-M%YS)>TWENTY_EPSILON_EB .AND. (M%YF-Y_MAX)>TWENTY_EPSILON_EB) THEN
    IF (G_FACTOR==0) THEN
       ! Subtract inner from outer cylinder volume
       CONE_MESH_INTERSECTION_VOLUME = PI*(RR0**2._EB-RRI**2._EB)*HH_IN
@@ -5941,7 +6292,7 @@ MV => MOVEMENT(MOVE_INDEX)
 
 ! If T34 present, use Matrix T3x4 for transformation: Note it takes precedence over other transformation parameters.
 
-IF (SUM(ABS(MV%T34(1:3,1:4))) > TWO_EPSILON_EB) THEN
+IF (SUM(ABS(MV%T34(1:3,1:4))) > TWENTY_EPSILON_EB) THEN
    X_VECTOR_1 = RESHAPE( (/X,Y,Z,1._EB/), (/4, 1/) )
    X_VECTOR   = MATMUL(MV%T34, X_VECTOR_1)
    X = X_VECTOR(1,1)
@@ -6535,5 +6886,84 @@ SUBROUTINE ACCUMULATE_STRING(STRING_SIZE,MYSTR,ACCSTR,ACCSTR_T_LEN,ACCSTR_USE_LE
    ACCSTR_USE_LEN=ACCSTR_USE_LEN+MYSTR_LEN
 END SUBROUTINE ACCUMULATE_STRING
 
+
+SUBROUTINE DEFINE_PRES_METHOD(SOLVER)
+
+USE GLOBAL_CONSTANTS, ONLY: PRES_METHOD, PRES_FLAG, CHECK_POISSON, PRES_ON_WHOLE_DOMAIN, GLMAT_VERBOSE, &
+                            ULMAT_SOLVER_LIBRARY, UGLMAT_SOLVER_LIBRARY, MKL_CPARDISO_FLAG, HYPRE_FLAG, &
+                            MKL_PARDISO_FLAG, UGLMAT_FLAG, GLMAT_FLAG, ULMAT_FLAG
+USE COMP_FUNCTIONS, ONLY: SHUTDOWN
+
+CHARACTER(*), INTENT(IN) :: SOLVER
+
+SELECT CASE(TRIM(SOLVER))
+
+   CASE('UGLMAT','UGLMAT PARDISO','UGLMAT HYPRE')
+      PRES_METHOD = 'UGLMAT'
+      PRES_FLAG   = UGLMAT_FLAG
+      PRES_ON_WHOLE_DOMAIN = .FALSE.
+      IF (CHECK_POISSON) GLMAT_VERBOSE=.TRUE.
+      UGLMAT_SOLVER_LIBRARY = HYPRE_FLAG
+      IF (TRIM(SOLVER)=='UGLMAT PARDISO') UGLMAT_SOLVER_LIBRARY = MKL_CPARDISO_FLAG
+
+   CASE('GLMAT','GLMAT PARDISO','GLMAT HYPRE')
+      PRES_METHOD = 'GLMAT'
+      PRES_FLAG   = GLMAT_FLAG
+      PRES_ON_WHOLE_DOMAIN = .TRUE.
+      IF (CHECK_POISSON) GLMAT_VERBOSE=.TRUE.
+      UGLMAT_SOLVER_LIBRARY = HYPRE_FLAG
+      IF (TRIM(SOLVER)=='GLMAT PARDISO') UGLMAT_SOLVER_LIBRARY = MKL_CPARDISO_FLAG
+
+   CASE('ULMAT','ULMAT PARDISO','ULMAT HYPRE')
+      PRES_METHOD = 'ULMAT'
+      PRES_FLAG   = ULMAT_FLAG
+      PRES_ON_WHOLE_DOMAIN = .FALSE.
+      IF (CHECK_POISSON) GLMAT_VERBOSE=.TRUE.
+      ULMAT_SOLVER_LIBRARY = MKL_PARDISO_FLAG
+      IF (TRIM(SOLVER)=='ULMAT HYPRE') ULMAT_SOLVER_LIBRARY = HYPRE_FLAG
+
+   CASE('FFT')
+      ! Nothing to do. By default PRES_FLAG is set to FFT_FLAG in cons.f90
+   CASE DEFAULT
+      ! Here the user added an unknown name to SOLVER, stop:
+      CALL SHUTDOWN('ERROR(371): Pressure solver '//TRIM(SOLVER)//' not known.') ; RETURN
+END SELECT
+
+! If library is not specified and only one library is linked, choose the available library
+#ifndef WITH_MKL
+#ifdef WITH_HYPRE
+IF (PRES_FLAG==ULMAT_FLAG ) ULMAT_SOLVER_LIBRARY =HYPRE_FLAG
+IF (PRES_FLAG==UGLMAT_FLAG .OR. PRES_FLAG==GLMAT_FLAG) UGLMAT_SOLVER_LIBRARY=HYPRE_FLAG
+#endif
+#endif
+#ifndef WITH_HYPRE
+#ifdef WITH_MKL
+IF (PRES_FLAG==ULMAT_FLAG ) ULMAT_SOLVER_LIBRARY =MKL_PARDISO_FLAG
+IF (PRES_FLAG==UGLMAT_FLAG) UGLMAT_SOLVER_LIBRARY=MKL_CPARDISO_FLAG
+#endif
+#endif
+
+! If neither library is specified, throw an error
+#ifndef WITH_MKL
+IF (PRES_FLAG==ULMAT_FLAG .AND. ULMAT_SOLVER_LIBRARY==MKL_PARDISO_FLAG) THEN
+   CALL SHUTDOWN('ERROR: MKL PARDISO selected for ULMAT solver without compiling and linking MKL library.')
+   RETURN
+ELSEIF (PRES_FLAG==UGLMAT_FLAG .AND. UGLMAT_SOLVER_LIBRARY==MKL_CPARDISO_FLAG) THEN
+   CALL SHUTDOWN('ERROR: MKL CLUSTER PARDISO selected for UGLMAT solver without compiling and linking MKL library.')
+   RETURN
+ENDIF
+#endif
+#ifndef WITH_HYPRE
+IF (PRES_FLAG==ULMAT_FLAG .AND. ULMAT_SOLVER_LIBRARY==HYPRE_FLAG) THEN
+   CALL SHUTDOWN('ERROR: HYPRE selected for ULMAT solver without compiling and linking HYPRE library.')
+   RETURN
+ELSEIF (PRES_FLAG==UGLMAT_FLAG .AND. UGLMAT_SOLVER_LIBRARY==HYPRE_FLAG) THEN
+   CALL SHUTDOWN('ERROR: HYPRE selected for UGLMAT solver without compiling and linking HYPRE library.')
+   RETURN
+ENDIF
+#endif
+
+END SUBROUTINE DEFINE_PRES_METHOD
+
 END MODULE MISC_FUNCTIONS
-   
+
