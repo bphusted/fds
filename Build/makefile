@@ -67,7 +67,7 @@ ifdef MKLROOT # This assumes the MKL library is available.
 #Set MKLLIBDIR
 MKL_DIR_UNIX  := $(subst \,/,$(MKLROOT))
 MKL_DIR_INTEL := $(MKL_DIR_UNIX)/lib/intel64
-MKL_DIR_BASE  := $(MKL_DIR_UNIX)/lib
+MKL_DIR_BASE  := $(MKL_DIR_UNIX)/lib/intel64
 MKL_BLA_LIB   := mkl_blacs_intelmpi_lp64
 MKL_BLA_PATH_A := "$(MKL_DIR_INTEL)/lib$(MKL_BLA_LIB).a"
 MKL_BLA_PATH_LIB := "$(MKL_DIR_INTEL)/$(MKL_BLA_LIB).lib"
