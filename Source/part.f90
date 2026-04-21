@@ -7,8 +7,8 @@ USE GLOBAL_CONSTANTS
 USE MESH_POINTERS
 USE COMP_FUNCTIONS, ONLY : CURRENT_TIME
 USE COMPLEX_GEOMETRY, ONLY: CC_IDCC,CC_IDCF,CC_CGSC,CC_SOLID
-IMPLICIT NONE (TYPE,EXTERNAL)
 
+IMPLICIT NONE (TYPE,EXTERNAL)
 PRIVATE
 
 PUBLIC INSERT_ALL_PARTICLES,MOVE_PARTICLES,PARTICLE_MASS_ENERGY_TRANSFER,REMOVE_PARTICLES,&
@@ -259,6 +259,12 @@ OVERALL_INSERT_LOOP: DO
    DO N=1,N_INIT
       IN => INITIALIZATION(N)
       IF (IN%SINGLE_INSERTION) CYCLE
+      IF (IN%DEVC_INDEX>0) THEN
+         IF (.NOT.DEVICE(IN%DEVC_INDEX)%CURRENT_STATE) CYCLE
+      ENDIF
+      IF (IN%CTRL_INDEX>0) THEN
+         IF (.NOT.CONTROL(IN%CTRL_INDEX)%CURRENT_STATE) CYCLE
+      ENDIF      
       IF (T >= IN%PARTICLE_INSERT_CLOCK(NM)) IN%PARTICLE_INSERT_CLOCK(NM) = IN%PARTICLE_INSERT_CLOCK(NM) + IN%DT_INSERT
       IF (T >= IN%PARTICLE_INSERT_CLOCK(NM)) INSERT_ANOTHER_BATCH = .TRUE.
    ENDDO
@@ -305,7 +311,7 @@ CONTAINS
 SUBROUTINE INSERT_SPRAY_PARTICLES
 
 USE MEMORY_FUNCTIONS, ONLY: ALLOCATE_STORAGE
-INTEGER :: I,OI
+INTEGER :: I,OI,COUNTER
 
 ! Loop over all devices, but look for sprinklers or nozzles. Count actuated sprinklers for output purposes.
 
@@ -409,6 +415,8 @@ SPRINKLER_INSERT_LOOP: DO KS=1,N_DEVC
       LP%T_INSERT = T
 
       ! Randomly choose particle direction angles, theta and phi
+      
+      COUNTER = 0
 
       CHOOSE_COORDS: DO
          PICK_PATTERN: IF(PY%SPRAY_PATTERN_INDEX>0) THEN ! Use spray pattern table
@@ -531,6 +539,13 @@ SPRINKLER_INSERT_LOOP: DO KS=1,N_DEVC
             IC = CELL_INDEX(II,JJ,KK)
             BC%IIG = II; BC%JJG = JJ; BC%KKG = KK
             BC%II  = II; BC%JJ  = JJ; BC%KK  = KK
+            COUNTER = COUNTER + 1
+            IF (COUNTER > 1000) THEN
+               WRITE(MESSAGE,'(A,A,A)') 'ERROR: Check position of DEVC ',TRIM(DV%ID),&
+                  '.  Too many particle insertion attempts fail solid cell check,'
+               CALL SHUTDOWN(MESSAGE,PROCESS_0_ONLY=.FALSE.)
+               RETURN
+            ENDIF
             IF (.NOT.CELL(IC)%SOLID) EXIT CHOOSE_COORDS
          ENDIF
 
@@ -1220,14 +1235,12 @@ TOTAL_OR_PER_CELL: IF (IN%N_PARTICLES > 0) THEN
                   CF => CUT_FACE(INDCF)
                   CC_VALID = .FALSE.
                   CFA_LOOP1: DO IFACE=1,CF%NFACE
-                     P_VECTOR = (/LP_X-CF%XYZCEN(IAXIS,IFACE), &
-                                 LP_Y-CF%XYZCEN(JAXIS,IFACE), &
-                                 LP_Z-CF%XYZCEN(KAXIS,IFACE)/)
+                     P_VECTOR = (/LP_X-CF%XYZCEN(IAXIS,IFACE), LP_Y-CF%XYZCEN(JAXIS,IFACE), LP_Z-CF%XYZCEN(KAXIS,IFACE)/)
                      DIST = NORM2(P_VECTOR)
                      IF (DIST<DIST_MIN) THEN
                         DIST_MIN = DIST
                         P_VECTOR_MIN = P_VECTOR
-                        NVEC_MIN = BOUNDARY_COORD(CFACE(CF%CFACE_INDEX(IFACE))%BC_INDEX)%NVEC
+                        NVEC_MIN = MESHES(NM)%BOUNDARY_COORD(CFACE(CF%CFACE_INDEX(IFACE))%BC_INDEX)%NVEC
                      ENDIF
                   ENDDO CFA_LOOP1
                   IF (DOT_PRODUCT(NVEC_MIN,P_VECTOR_MIN) > TWENTY_EPSILON_EB) CC_VALID=.TRUE.
@@ -1596,6 +1609,7 @@ END SUBROUTINE VOLUME_INIT_PARTICLE
 !> \brief Set up the properties of a single, newly inserted particle
 
 SUBROUTINE INITIALIZE_SINGLE_PARTICLE
+
 USE MATH_FUNCTIONS, ONLY: EVALUATE_RAMP
 REAL(EB) :: AREA,SCALE_FACTOR,RADIUS,LP_VOLUME
 INTEGER :: N

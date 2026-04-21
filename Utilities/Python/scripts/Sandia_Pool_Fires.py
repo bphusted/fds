@@ -9,9 +9,9 @@ import fdsplotlib
 # Get plot style parameters
 plot_style = fdsplotlib.get_plot_style('fds')
 
-expdir = '../../../exp/Sandia_Jets_Pools_Fireballs/'
-outdir = '../../../out/Sandia_Jets_Pools_Fireballs/'
-figdir = '../../Manuals/FDS_Validation_Guide/SCRIPT_FIGURES/Sandia_Jets_Pools_Fireballs/'
+expdir = '../../../exp/Sandia_Pool_Fires/'
+outdir = '../../../out/Sandia_Pool_Fires/'
+figdir = '../../Manuals/FDS_Validation_Guide/SCRIPT_FIGURES/Sandia_Pool_Fires/'
 
 E_file = ['ethane_pool.csv','ethylene_pool.csv','propane_pool.csv','isopentane_pool.csv']
 M_file = ['ethane_pool_cat_devc.csv','ethylene_pool_cat_devc.csv','propane_pool_cat_devc.csv','isopentane_pool_cat_devc.csv']
@@ -62,6 +62,11 @@ for i in range(4):
                            marker_style=marker[i],
                            data_label=label[i])
                                  
+    df = pd.DataFrame({'Index': range(len(M_clean)),'Heat Flux': M_clean})
+    df.to_csv(outdir + label[i] + '.csv', index=False)
+    df = pd.DataFrame({'Index': range(len(E_clean)),'Heat Flux': E_clean})
+    df.to_csv(expdir + label[i] + '.csv', index=False)
+
 # Save as PDF
 fig_file =  os.path.join(figdir, f'Sandia_Pools.pdf')
 fig.savefig(fig_file, format='pdf')
