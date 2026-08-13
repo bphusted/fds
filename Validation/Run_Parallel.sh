@@ -14,6 +14,7 @@ cd Backward_Facing_Step;  ./Run_All.sh $OPTIONS; cd ..
 cd BGC_GRI_LNG_Fires;  ./Run_All.sh $OPTIONS; cd ..
 cd Bouchair_Solar_Chimney;  ./Run_All.sh $OPTIONS; cd ..
 cd Casara_Arts_Ribbed_Channel;  ./Run_All.sh $OPTIONS; cd ..
+cd CERTEC_Pool_Fires;  ./Run_All.sh $OPTIONS; cd ..
 cd Convection;  ./Run_All.sh $OPTIONS; cd ..
 cd Crown_Fires;  ./Run_All.sh $OPTIONS; cd ..
 cd CSIRO_Grassland_Fires;  ./Run_All.sh $OPTIONS; cd ..
@@ -61,13 +62,17 @@ cd OMP_Scaling_Tests;  ./Run_All.sh $OPTIONS; cd ..
 cd Phoenix_LNG_Fires;  ./Run_All.sh $OPTIONS; cd ..
 cd Pool_Fires;  ./Run_All.sh $OPTIONS; cd ..
 cd Purdue_Flames;  ./Run_All.sh $OPTIONS; cd ..
+cd Sandia_Fireballs;  ./Run_All.sh $OPTIONS; cd ..
+cd Sandia_Jet_Fires;  ./Run_All.sh $OPTIONS; cd ..
 cd Sandia_Methane_Burner;  ./Run_All.sh $OPTIONS; cd ..
 cd Sandia_Plumes;  ./Run_All.sh $OPTIONS; cd ..
+cd Sandia_Pool_Fires;  ./Run_All.sh $OPTIONS; cd ..
 cd Shell_LNG_Fireballs;  ./Run_All.sh $OPTIONS; cd ..
 cd Sippola_Aerosol_Deposition; ./Run_All.sh $OPTIONS; cd ..
 cd Smyth_Slot_Burner;  ./Run_All.sh $OPTIONS; cd ..
 cd SP_Wood_Cribs;  ./Run_All.sh $OPTIONS; cd ..
 cd SWJTU_Tunnels;  ./Run_All.sh $OPTIONS; cd ..
+cd TAMU_Jet_Fires;  ./Run_All.sh $OPTIONS; cd ..
 cd Turbulent_Jet;  ./Run_All.sh $OPTIONS; cd ..
 cd TUS_Facade;  ./Run_All.sh $OPTIONS; cd ..
 cd UL_NFPRF;  ./Run_All.sh $OPTIONS; cd ..

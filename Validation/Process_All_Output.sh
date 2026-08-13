@@ -97,6 +97,7 @@ PROCESS BRE_Spray
 PROCESS Bryant_Doorway
 PROCESS CAROLFIRE
 PROCESS Casara_Arts_Ribbed_Channel
+PROCESS CERTEC_Pool_Fires
 PROCESS Convection
 PROCESS Crown_Fires
 PROCESS CSIRO_Grassland_Fires
@@ -165,8 +166,11 @@ PROCESS PRISME
 PROCESS Purdue_Flames
 PROCESS Ranz_Marshall
 PROCESS Restivo_Experiment
+PROCESS Sandia_Fireballs
+PROCESS Sandia_Jet_Fires
 PROCESS Sandia_Methane_Burner
 PROCESS Sandia_Plumes
+PROCESS Sandia_Pool_Fires
 PROCESS Scaling_Pyrolysis
 PROCESS Shell_LNG_Fireballs
 PROCESS Sippola_Aerosol_Deposition
@@ -175,6 +179,7 @@ PROCESS SP_AST
 PROCESS SP_Wood_Cribs
 PROCESS Steckler_Compartment
 PROCESS SWJTU_Tunnels
+PROCESS TAMU_Jet_Fires
 PROCESS Theobald_Hose_Stream
 PROCESS Turbulent_Jet
 PROCESS TUS_Facade
@@ -190,6 +195,7 @@ PROCESS USCG_HAI
 PROCESS USFS_Catchpole
 PROCESS USFS_Corsica
 PROCESS USN_Hangars
+PROCESS Utiskul_Compartment
 PROCESS UWO_Wind_Tunnel
 PROCESS Vettori_Flat_Ceiling
 PROCESS Vettori_Sloped_Ceiling

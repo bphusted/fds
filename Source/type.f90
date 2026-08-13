@@ -77,6 +77,7 @@ TYPE LAGRANGIAN_PARTICLE_CLASS_TYPE
    REAL(EB) :: HEAT_TRANSFER_COEFFICIENT_SOLID  !< Heat transfer coefficient from solid surface to liquid droplet (W/m2/K)
    REAL(EB) :: DRAG_COEFFICIENT(3)        !< Drag coefficient in 3 coordinate directions
    REAL(EB) :: SURFACE_DIAMETER           !< Effective liquid droplet diameter (m) on a solid surface
+   REAL(EB) :: DRIP_DIAMETER=-1._EB       !< Effective liquid droplet diameter (m) of a droplet dripping off of a surface
    REAL(EB) :: SURFACE_TENSION            !< Surface tension (N/m) of liquid droplets
    REAL(EB) :: BREAKUP_RATIO              !< Ratio of child Sauter mean to parent size in Bag breakup regime
    REAL(EB) :: BREAKUP_GAMMA              !< Rosin-Rammler size distribution parameter for break-up distribution
@@ -336,6 +337,7 @@ TYPE BOUNDARY_PROP1_TYPE
    REAL(EB) :: M_DOT_PART_ACTUAL     !< Mass flux of all particles (kg/m2/s)
    REAL(EB) :: Q_LEAK=0._EB          !< Heat production of leaking gas (W/m3)
    REAL(EB) :: VEL_ERR_NEW=0._EB     !< Velocity mismatch at mesh or solid boundary (m/s)
+   REAL(EB) :: INT_FTP=0._EB         !< Flux time product integral (kJ/m2)^FTP_N
 
    LOGICAL :: BURNAWAY=.FALSE.       !< Indicater if cell can burn away when fuel is exhausted
    LOGICAL :: LAYER_REMOVED=.FALSE.  !< Indicator that at least one layer has been removed during the time step
@@ -922,6 +924,10 @@ TYPE SURFACE_TYPE
    REAL(EB) :: TIME_STEP_FACTOR=10._EB                 !< Maximum amount to reduce solid phase conduction time step
    REAL(EB) :: REMESH_RATIO=0.05                       !< Fraction change in wall node DX to trigger a remesh
    REAL(EB) :: FILM_FACTOR=ONTH                        !< Weighting factor for evaluating surface file properties
+   REAL(EB) :: FTP_CR                                  !< Critical flux time product for ignition (kJ/m2)^FTP_N
+   REAL(EB) :: FTP_N                                   !< Flux time product integral exponent
+   REAL(EB) :: FTP_Q_CR                                !< Critical heat flux for flux time product (kW/m2)
+   REAL(EB) :: FTP_FAC                                 !< Exponent adjustment for kW to W conversion
    REAL(EB), DIMENSION(3) :: HT3D_WEIGHT=ONTH          !< Directional weighting factor for HT3D mass transport
 
    REAL(EB), ALLOCATABLE, DIMENSION(:) :: DX,RDX,RDXN,X_S,DX_WGT,MF_FRAC,PARTICLE_INSERT_CLOCK
@@ -1025,7 +1031,8 @@ END TYPE SURFACE_TYPE
 TYPE (SURFACE_TYPE), DIMENSION(:), ALLOCATABLE, TARGET :: SURFACE
 
 TYPE OMESH_TYPE
-   REAL(EB), ALLOCATABLE, DIMENSION(:,:,:) :: MU,RHO,RHOS,TMP,U,V,W,US,VS,WS,H,HS,FVX,FVY,FVZ,D,DS,KRES,IL_S,IL_R,Q
+   REAL(EB), ALLOCATABLE, DIMENSION(:,:,:) ::&
+         MU,RHO,RHOS,TMP,U,V,W,US,VS,WS,H,HS,FVX,FVY,FVZ,FVX_D,FVY_D,FVZ_D,D,DS,KRES,IL_S,IL_R,IL_R_OLD,Q
    REAL(EB), ALLOCATABLE, DIMENSION(:,:,:,:) :: ZZ,ZZS
    INTEGER, ALLOCATABLE, DIMENSION(:) :: IIO_R,JJO_R,KKO_R,IOR_R,IIO_S,JJO_S,KKO_S,IOR_S
    INTEGER :: I_MIN_R=-10,I_MAX_R=-10,J_MIN_R=-10,J_MAX_R=-10,K_MIN_R=-10,K_MAX_R=-10,NIC_R=0, &
@@ -1038,6 +1045,13 @@ TYPE OMESH_TYPE
    TYPE (STORAGE_TYPE) :: PARTICLE_SEND_BUFFER,PARTICLE_RECV_BUFFER
    TYPE (STORAGE_TYPE) :: WALL_SEND_BUFFER,WALL_RECV_BUFFER
    TYPE (STORAGE_TYPE) :: THIN_WALL_SEND_BUFFER,THIN_WALL_RECV_BUFFER
+
+   ! Cross-mesh BACK CFACE exchange (exposed backing of immersed geometry CFACEs):
+   TYPE (STORAGE_TYPE) :: CFACE_SEND_BUFFER,CFACE_RECV_BUFFER
+   INTEGER :: N_CFACE_QUERY=0,N_CFACE_QUERY_DIM=0
+   REAL(EB), ALLOCATABLE, DIMENSION(:,:) :: CFACE_QUERY_XYZ   !< Back-face intersection points (3,N) that NM needs NOM to resolve
+   REAL(EB), ALLOCATABLE, DIMENSION(:,:) :: CFACE_QUERY_NBACK !< Back GEOMETRY triangle normal (3,N) used to orient the back CFACE search
+   INTEGER,  ALLOCATABLE, DIMENSION(:)   :: CFACE_QUERY_FRONT !< Front CFACE index (in NM) associated with each query
 
    ! CC_IBM data exchange arrays:
    INTEGER :: NICC_S(2)=0, NICC_R(2)=0, NICF_S(2)=0, NICF_R(2)=0, NLKF_S=0, NLKF_R=0, &
@@ -1439,6 +1453,21 @@ TYPE CC_CUTCELL_TYPE
 END TYPE CC_CUTCELL_TYPE
 
 
+!> \brief Mesh-owned GCELL storage in SoA form.
+!! One GCELL slot IG = one connected gas polyhedron in the active complex-geometry region.
+
+TYPE CC_GCELL_TYPE
+   INTEGER :: N = 0
+   INTEGER,  ALLOCATABLE, DIMENSION(:)   :: CELL_TYPE !< (1:N) CC_GCELL_CUT or CC_GCELL_REG.
+   INTEGER,  ALLOCATABLE, DIMENSION(:,:) :: IJK       !< (IAXIS:KAXIS,1:N) host Cartesian cell indices.
+   INTEGER,  ALLOCATABLE, DIMENSION(:)   :: ICC       !< (1:N) CUT_CELL index (0 if regular cell).
+   INTEGER,  ALLOCATABLE, DIMENSION(:)   :: JCC       !< (1:N) sub-cell index within CUT_CELL (0 if regular).
+   INTEGER,  ALLOCATABLE, DIMENSION(:)   :: STATUS    !< (1:N) active / blocked.
+   REAL(EB), ALLOCATABLE, DIMENSION(:)   :: VOLUME    !< (1:N) cached volume.
+   REAL(EB), ALLOCATABLE, DIMENSION(:,:) :: XYZCEN    !< (IAXIS:KAXIS,1:N) cached centroid.
+END TYPE CC_GCELL_TYPE
+
+
 !> \brief Regular faces type that contains indexes for construction of H Poisson discretization matrix.
 
 TYPE CC_REGFACE_TYPE
@@ -1514,9 +1543,11 @@ TYPE VENTS_TYPE
                TMP_EXTERIOR=-1000._EB,DYNAMIC_PRESSURE=0._EB,UVW(3)=-1.E12_EB,RADIUS=-1._EB
    LOGICAL :: ACTIVATED=.TRUE.,GEOM=.FALSE.,AREA_ADJUST=.TRUE.,DRAW=.TRUE.
    CHARACTER(LABEL_LENGTH) :: DEVC_ID='null',CTRL_ID='null',ID='null'
-   ! turbulent inflow (experimental)
+   ! Divergence-Free Synthetic Eddy Method (DFSEM; Poletto et al. 2013)
    INTEGER :: N_EDDY=0
-   REAL(EB) :: R_IJ(3,3)=0._EB,A_IJ(3,3)=0._EB,SIGMA_IJ(3,3)=0._EB,EDDY_BOX_VOLUME=0._EB, &
+   REAL(EB) :: TURBULENCE_INTENSITY=0._EB !< I=u'/U=v'/U=w'/U; U=local mean at eddy; R~I^2 U^2 via amplitudes
+   REAL(EB) :: R_IJ(3,3)=0._EB,EDDY_BOX_VOLUME=0._EB, &
+              L_EDDY(3)=0._EB,EDDY_C1=0._EB,EDDY_C2=1._EB,DFSEM_ROT(3,3)=0._EB, &
                X_EDDY_MIN=0._EB,X_EDDY_MAX=0._EB, &
                Y_EDDY_MIN=0._EB,Y_EDDY_MAX=0._EB, &
                Z_EDDY_MIN=0._EB,Z_EDDY_MAX=0._EB
@@ -2062,6 +2093,7 @@ TYPE FAN_TYPE
    REAL(EB) :: MAX_PRES                !< Maximum fan pressure (Pa) used for FAN_TYPE=2
    REAL(EB) :: OFF_LOSS=1._EB          !< Flow loss through fan when it is not running
    REAL(EB) :: TAU=0._EB               !< t2 or tanh time constant for spinning up fan speed
+   REAL(EB) :: CURVE_TEMP              !< Temperature basis for fan curve
    CHARACTER(LABEL_LENGTH) :: ID       !< Name of fan
    CHARACTER(LABEL_LENGTH) :: FAN_RAMP !< Name of RAMP containing fan curve
 END TYPE FAN_TYPE
@@ -2132,7 +2164,7 @@ TYPE HVAC_QUANTITY_TYPE
    CHARACTER(LABEL_LENGTH) :: SMOKEVIEW_LABEL !< Smokeview label for QUANTITY
    CHARACTER(LABEL_LENGTH) :: SMOKEVIEW_BAR_LABEL !< Smokeview colorbar label for QUANTITY
    CHARACTER(LABEL_LENGTH) :: UNITS !< Units for QUANTITY
-   LOGICAL :: DRY !< Remove water vapor before computing a mass or volume fraction 
+   LOGICAL :: DRY !< Remove water vapor before computing a mass or volume fraction
 END TYPE HVAC_QUANTITY_TYPE
 
 
