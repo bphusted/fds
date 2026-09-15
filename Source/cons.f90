@@ -170,6 +170,7 @@ INTEGER :: CHAR_INDEX=0                    !< Index for MATL CHAR
 
 INTEGER :: STOP_STATUS=NO_STOP             !< Indicator of whether and why to stop the job
 INTEGER :: INPUT_FILE_LINE_NUMBER=0        !< Indicator of what line in the input file is being read
+INTEGER :: SMOKE3D_VERSION=1               !< Indicator of the format of the Smoke3d output files
 
 INTEGER :: RND_SEED=0                      !< User RANDOM_SEED
 
@@ -473,6 +474,9 @@ CHARACTER(LABEL_LENGTH) :: EXTINCTION_MODEL='null'
 ! Radiation parameters
 
 LOGICAL, ALLOCATABLE, DIMENSION(:) :: RADIATION_COMPLETED  !< Indicates that the radiation field is completely updated
+
+LOGICAL :: RANDOMIZE_RADIATION_DIRECTIONS=.FALSE.           !< If TRUE, randomly rotate solid angles each full RTE solve
+LOGICAL :: ALLOW_RANDOM_RADIATION_ROTATION=.FALSE.         !< A derived variable, to block random rotation fo cyl and 2d cases
 
 INTEGER :: NUMBER_SPECTRAL_BANDS=0                         !< Number of wavelength bands for rad solver (1 for gray gas)
 INTEGER :: NUMBER_RADIATION_ANGLES=0                       !< Number of solid angles over which radiation is solved
@@ -778,6 +782,8 @@ LOGICAL, ALLOCATABLE, DIMENSION(:) :: EXTERNAL_CTRL
 ! VENT array
 REAL(EB), ALLOCATABLE, DIMENSION(:) :: VENT_TOTAL_AREA  !< Array holding grid-snapped areas for all vents
 
+LOGICAL :: HAS_MIRROR_BOUNDARY=.FALSE. !< To decide if mirror boundary exist for the setup.
+
 END MODULE GLOBAL_CONSTANTS
 
 
@@ -840,15 +846,21 @@ IMPLICIT NONE (TYPE,EXTERNAL)
 
 REAL(EB), ALLOCATABLE, DIMENSION(:,:) :: DLN                !< Wall-normal matrix
 REAL(EB), ALLOCATABLE, DIMENSION(:,:) :: DLANG              !< Angles
-REAL(EB), ALLOCATABLE, DIMENSION(:,:) :: ORIENTATION_FACTOR !< Fraction of radiation angle corresponding to a particular direction
+REAL(EB), ALLOCATABLE, DIMENSION(:,:) :: DLANG_OLD          !< Angles in previous rotation
+REAL(EB), ALLOCATABLE, DIMENSION(:,:) :: DLANG_LOCAL        !< Angles in rotating axis system
 REAL(EB), ALLOCATABLE, DIMENSION(:)   :: BBFRAC             !< Fraction of blackbody radiation
 REAL(EB), ALLOCATABLE, DIMENSION(:)   :: WL_LOW             !< Lower wavelength limit of the spectral band
 REAL(EB), ALLOCATABLE, DIMENSION(:)   :: WL_HIGH            !< Upper wavelength limit of the spectral band
 REAL(EB), ALLOCATABLE, DIMENSION(:)   :: DLX                !< Mean x-component of the control angle vector
 REAL(EB), ALLOCATABLE, DIMENSION(:)   :: DLY                !< Mean y-component of the control angle vector
 REAL(EB), ALLOCATABLE, DIMENSION(:)   :: DLZ                !< Mean z-component of the control angle vector
+REAL(EB), ALLOCATABLE, DIMENSION(:)   :: MERI_COMP          !< x-component of the control angle vector w.r.t rotating x-axis
+REAL(EB), ALLOCATABLE, DIMENSION(:)   :: AZIM_COMP          !< y-component of the control angle vector w.r.t rotating y-axis
+REAL(EB), ALLOCATABLE, DIMENSION(:)   :: AXIS_COMP          !< z-component of the control angle vector w.r.t rotating z-axis
 REAL(EB), ALLOCATABLE, DIMENSION(:)   :: DLB                !< Mean bottom component of RAYN vector (cylindrical case)
+REAL(EB), ALLOCATABLE, DIMENSION(:)   :: DLB_COMP           !< Mean bottom component of RAYN vector (cylindrical case)
 REAL(EB), ALLOCATABLE, DIMENSION(:)   :: RSA                !< Array of solid angles
+REAL(EB), ALLOCATABLE, DIMENSION(:,:) :: DLO_ORIENTATION    !< COS of orientation vector w.r.t fvm angle vectors
 
 INTEGER, ALLOCATABLE, DIMENSION(:,:)  :: DLM                !< Mirroring indices
 INTEGER, ALLOCATABLE, DIMENSION(:)    :: NRP                !< Number of radiation phi angles at each theta band

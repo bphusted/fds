@@ -6134,6 +6134,7 @@ This simple case tests the particle transport scheme in the absence of drag. A 1
 \label{cannon_ball_fig}
 \end{figure}
 
+\FloatBarrier
 
 \subsection{Particles Swept Up in a Free Stream}
 
@@ -6147,6 +6148,8 @@ Consider a 1~m square duct that is 10~m long.  The boundary conditions are perio
 \label{fig_fluid_part_mom}
 \end{figure}
 
+
+\FloatBarrier
 
 \subsection{Particles Slowing Down a Gas Flow}
 \label{particle_drag}
@@ -6188,6 +6191,8 @@ Checking this quantity is useful for confirming the \ct{PARTICLE DRAG FORCE X/Y/
 \end{figure}
 
 
+\FloatBarrier
+
 \subsection{Stationary Spherical Particles in a Duct}
 \label{sphere_drag_1}
 \label{sphere_drag_2}
@@ -6208,6 +6213,8 @@ In a second test case, consider a single 10~m long, 1~m square duct. Spherical p
 \label{sphere_drag_fig}
 \end{figure}
 
+
+\FloatBarrier
 
 \subsection{Drag Caused by Vegetation}
 \label{vegetation_drag_1}
@@ -6256,6 +6263,8 @@ The results are shown in the right hand plot of Fig.~\ref{vegetation_drag_fig} f
 \end{figure}
 
 
+\FloatBarrier
+
 \subsubsection{Particle Drag Near Surfaces}
 \label{sec:particle_drag_near_surfaces}
 
@@ -6268,6 +6277,8 @@ This test series examines the drag force experienced by a static particle near a
 \label{fig:part_drag_profile}
 \end{figure}
 
+
+\FloatBarrier
 
 \subsection{Mesh Screen in a Duct}
 \label{screen_drag_1}
@@ -6285,6 +6296,8 @@ where $K$ and $Y$ are empirical constants defined in the FDS User's Guide, the p
 \caption[Sample cases \ct{screen_drag}]{Outputs of the \ct{screen_drag} test cases compared with analytical solutions.  Left 2~m/s inlet, right 20~m/s inlet.  The three cases represent different values of \ct{FREE_AREA_FRACTION} (0.1, 0.4, and 0.8) within the channel.}
 \label{screen_drag_plots}
 \end{figure}
+
+\FloatBarrier
 
 \subsection{Flow through Porous Media}
 \label{porous_media}
@@ -6304,6 +6317,7 @@ where ${\rm K}=1 \times 10^{-7}$~m$^2$ and ${\rm Y}=0.1$ in all three coordinate
 
 
 
+\FloatBarrier
 
 \subsection{Particle Terminal Velocity}
 
@@ -6331,6 +6345,7 @@ The $L_\infty$ (maximum) error of the FDS computed terminal velocity and positio
 
 
 
+\FloatBarrier
 
 
 \subsection{Particle Trajectory}
@@ -6396,6 +6411,7 @@ $\beta=m'''/\rho_{\rm p}$ is the ``packing ratio,'' the vegetation mass per unit
 \label{vegetation_absorb_fig}
 \end{figure}
 
+\FloatBarrier
 
 \subsection{Heating a Metal Sphere via Radiation and Convection}
 \label{particle_heating_convection}
@@ -6448,7 +6464,7 @@ Figure~\ref{water_evaporation_1_plots} displays
 the average enthalpy, humidity, density, temperature, pressure, and mass of water vapor within the box.
 The solid horizontal lines denote the expected steady-state values.
 
-\begin{figure}[p]
+\begin{figure}[h]
 \noindent
 \begin{tabular*}{\textwidth}{l@{\extracolsep{\fill}}r}
 \includegraphics[height=2.2in]{SCRIPT_FIGURES/water_evaporation_1_enthalpy} &
@@ -6471,7 +6487,7 @@ In the second case, the dimensions of the box are 40~cm on a side, and the initi
 air temperature is 500~\unit{\degreeCelsius}. There is only one fictitiously large water droplet in the box whose diameter is 10~cm and whose temperature is 20~\unit{\degreeCelsius}.
 The initial mass fraction of water vapor is 0. It is expected that the water will evaporate until the air in the box is saturated. The analytical solution for the stationary state is derived from the first law of thermodynamics and the Clausius-Clapeyron equation by assuming that the liquid water temperature is equal to air temperature at the steady state. Results are shown in Fig.~\ref{water_evaporation_2_plots}.
 
-\begin{figure}[p]
+\begin{figure}[h]
 \noindent
 \begin{tabular*}{\textwidth}{l@{\extracolsep{\fill}}r}
 \includegraphics[height=2.2in]{SCRIPT_FIGURES/water_evaporation_2_enthalpy} &
@@ -6496,7 +6512,7 @@ and the total mass of water droplets is 0.1~kg. The initial mass fraction of wat
 As in the second case, the analytical solution for the stationary state derives from the first principle of thermodynamics and the Clausius-Clapeyron equation
 by assuming that the liquid water temperature is equal to air temperature at the stationary state.  Results are shown in Fig.~\ref{water_evaporation_3_plots}.
 
-\begin{figure}[p]
+\begin{figure}[h]
 \noindent
 \begin{tabular*}{\textwidth}{l@{\extracolsep{\fill}}r}
 \includegraphics[height=2.2in]{SCRIPT_FIGURES/water_evaporation_3_enthalpy} &
@@ -6626,6 +6642,8 @@ In the test case called \ct{Sprinklers_and_Sprays/geom_sprk_mass.fds}, two ident
 \label{geom_sprk_mass_fig}
 \end{figure}
 
+\FloatBarrier
+
 \subsection{Obstructions of Different Orientations}
 \label{geom_particle_cascade_2}
 
@@ -6637,6 +6655,7 @@ In the test case called \ct{Complex_Geometry/geom_particle_cascade_2.fds}, four 
 \label{geom_particle_cascade_2_fig}
 \end{figure}
 
+\FloatBarrier
 
 \subsection{Adiabatic Surface Temperature}
 \label{AST_spray}
@@ -6648,6 +6667,8 @@ This test case is a modified version of \ct{Radiation/adiabatic_surface_temperat
 \caption[The \ct{adiabatic_surface_temperature_spray} test case]{Adiabatic and true surface temperatures under radiative heating (0 - 50 s), heating and spray  cooling (50-100 s) and only spray cooling (100-150 s).}
 \label{adiabatic_surf_temp_spray}
 \end{figure}
+
+\FloatBarrier
 
 \subsection{Droplet Movement on Solid Surfaces with MPI}
 \label{cascadempi}
@@ -6662,6 +6683,7 @@ This test case is a modified version of \ct{cascade} (see FDS User's Guide \cite
 \end{figure}
 
 
+\FloatBarrier
 
 \section{Flow Rate and Pipe Networks}
 \label{flow_rate_2}
@@ -6678,6 +6700,7 @@ In this test case four sprinklers are placed in a room.  The first three sprinkl
 \end{figure}
 
 
+\FloatBarrier
 
 \section{Turbulent Dispersion}
 \label{turbulent_dispersion}
@@ -6779,13 +6802,16 @@ The second duct is placed in the upper half of the compartment and is assigned a
 \section{HVAC Dampers}
 \label{HVAC_damper}
 
-The \ct{HVAC_damper} example case is a simple duct network of three ducts connected by a tee.  A damper is present in one of the ducts and linked to a \ct{DEVC} that will change state at 10~s.  With the damper open, the respective duct flow speeds should be 3~m/s, 1~m/s, and 2~m/s.  When the damper closes, the respective duct flow speeds should be 3~m/s, 3~m/s, and~0 m/s.  Results of this are shown in Fig.~\ref{fig:HVAC_damper}.
+The \ct{HVAC_damper} example case is a simple duct network of three ducts connected by a tee.  A damper is present in one of the ducts and linked to a \ct{DEVC} that will change state at 10~s.  With the damper open, the respective duct velocities should be 3~m/s, 1~m/s, and 2~m/s.  When the damper closes, the respective duct velocities should be 3~m/s, 3~m/s, and~0 m/s.  With the damper open, the wall velocities should be 0.75~m/s for the inlet and -0.25~m/s for the two outlets. After the damper closes, the inlet should stay the same, and ducts 1 and 3 should repectively become -0.75~m/s and 0~m/s. Results of this are shown in Fig.~\ref{fig:HVAC_damper}.
 
-\begin{figure}[!ht]
-\centering
-\includegraphics[height=2.2in]{SCRIPT_FIGURES/HVAC_damper}
-\caption[Example case \ct{HVAC_damper}]{Simple duct network with a damper, case \ct{HVAC_damper}.}
-\label{fig:HVAC_damper}
+\begin{figure}[ht]
+    \noindent
+    \begin{tabular*}{\textwidth}{l@{\extracolsep{\fill}}r}
+        \includegraphics[height=2.2in]{SCRIPT_FIGURES/HVAC_damper_duct} &
+        \includegraphics[height=2.2in]{SCRIPT_FIGURES/HVAC_damper_wall}
+    \end{tabular*}
+    \caption[Example case \ct{HVAC_damper}]{Simple duct network with a damper, case \ct{HVAC_damper}.}
+    \label{fig:HVAC_damper}
 \end{figure}
 
 
@@ -6810,7 +6836,7 @@ The sample case \ct{HVAC_filter} demonstrates the use of the filter input.  A 1~
 \section{HVAC Fans}
 \label{fan_test}
 
-This case tests a quadratic fan using the default approach to finding the fan operation point. Two compartments share a common wall. Both compartments are considered as separate ``pressure zones.'' Two, 0.04~m$^2$ HVAC ducts are defined.  One duct has a quadratic fan with a maximum volumetric flow of 0.16~\unit{m^3/s} and a stall pressure of 10~Pa. The second is an open duct with a flow loss of 10. The volume flow through the fans is obtained from the equation below:
+This pair of cases tests a quadratic fan using the default approach to finding the fan operation point. The cases are identical except for the ambient temperature which is  \SI{313.15}{\degreeCelsius} (twice the normal temperature in Kelvin) in the second case. Two compartments share a common wall. Both compartments are considered as separate ``pressure zones.'' Two, 0.04~m$^2$ HVAC ducts are defined.  One duct has a quadratic fan with a maximum volumetric flow of 0.16~\unit{m^3/s} and a stall pressure of 10~Pa. The second is an open duct with a flow loss of 10. The volume flow through the fans is obtained from the equation below:
 \be
    \dot{V}_{\hbox{\footnotesize fan}} = \dot{V}_{\hbox{\footnotesize max}} \; \hbox{sign} (\Delta p_{\hbox{\footnotesize max}}-\Delta p) \sqrt{ \frac{ |\Delta p - \Delta p_{\hbox{\footnotesize max}}|}{\Delta p_{\hbox{\footnotesize max}} } }  \label{fan_curve2}
 \ee
@@ -6818,18 +6844,18 @@ $\dot{V}_{\hbox{\footnotesize max}}=0.16$~\unit{m^3/s} is the maximum output of 
 \be
    \dot{V}_{\hbox{\footnotesize fan}}=A_{\hbox{\footnotesize duct}} \sqrt{\frac{2 \Delta p}{\rho K}}
 \ee
-Setting the above equation equal to Eq.~(\ref{fan_curve2}), the pressure drop can be determined:
+Setting the above equation equal to Eq.~(\ref{fan_curve2}), the pressure drop can be determined for the first case:
 \be
    \sqrt{\frac {2 |p_2-p_1|}{ (1.2 \; \hbox{\unit{kg/m^3}}) 10}} (0.04 \; \hbox{m}^2) = (0.16 \; \hbox{\unit{m^3/s}})  \; \sqrt{ \frac{ |p_1-p_2-10 \; \hbox{Pa}|}{10 \; \hbox{Pa}}  }
 \ee
-The solution is $p_2=4.5$~Pa and $p_1=-4.5$~Pa (see Fig.~\ref{fan_test_fig}). Note that the sign of the volume flow in the duct indicates whether the flow is moving from the first node to the second (positive) or the second node to the first (negative). This convention can make these types of calculations a bit tricky.
+The solution is $p_2=4.5$~Pa and $p_1=-4.5$~Pa (see Fig.~\ref{fan_test_fig}). Note that the sign of the volume flow in the duct indicates whether the flow is moving from the first node to the second (positive) or the second node to the first (negative). This convention can make these types of calculations a bit tricky. In the second case, fan affinity laws apply, and the fan curve is expected to shift by the ratio of the current duct density to the density the fan was tested at (default is  \SI{20}{\degreeCelsius}). This means the expected pressure is half that in the first case. The volume flow should not change. 
 
 \begin{figure}[ht]
 \begin{tabular*}{\textwidth}{lr}
 \includegraphics[height=2.2in]{SCRIPT_FIGURES/fan_test_Pressure} &
 \includegraphics[height=2.2in]{SCRIPT_FIGURES/fan_test_Volume_Flow}
 \end{tabular*}
-\caption[Results of the \ct{fan_test} case]{Compartment pressure and volume flow for the \ct{fan_test} case.}
+\caption[Results of the \ct{fan_test} case]{Compartment pressure and volume flow for the \ct{fan_test} and \ct{fan_test_2} cases.}
 \label{fan_test_fig}
 \end{figure}
 
@@ -7036,8 +7062,7 @@ In the second verification case (\ct{leak_geom}), three, sealed, 1~m$^3$ compart
 \label{ashrae7_quadratic}
 \label{ashrae7_table}
 
-ASHRAE Sample Problem 7~\cite{ASHRAE} is a simple HVAC system that represents a metal working exhaust system for a machine shop where particulates from three pieces of equipment are removed by a dust collector.  The network, shown in Fig.~\ref{ASHRAE7}, consists of three inlets, two tees, the dust collector, and a fan.  The lengths, diameters, and friction losses for all the components are specified, as well as the fan flow rate. The pressure drops and flow rates can be computed by hand.  Also listed in Fig.~\ref{ASHRAE7} are the predicted pressure drops for a fan with a fixed flow rate, a fan with a quadratic fan curve (\ct{MAX_FLOW=2.4094, MAX_PRESSURE=3000}) that includes the fixed flow state (i.e., the flow rate of 1.45~\unit{m^3/s} and pressure drop of 1913.5~Pa from the fixed flow simulation sits on the quadratic curve), and a fan with a \ct{RAMP} to define the same quadratic fan curve at 500~Pa intervals. The hand calculations assume a constant density, whereas the FDS computation will have a slightly non-uniform density in the network due to pressure drops. It is expected that there will be small differences that will be more noticeable at higher pressure changes.  Additionally since specifying a fan curve via a table results in a piecewise linear approximation, it is expected that the user-defined fan curve results will vary slightly from the quadratic and fixed flow results.
-
+ASHRAE Sample Problem 7~\cite{ASHRAE} is a simple HVAC system that represents a metal working exhaust system for a machine shop where particulates from three pieces of equipment are removed by a dust collector.  The network, shown in Fig.~\ref{ASHRAE7}, consists of three inlets, two tees, the dust collector, and a fan.  The lengths, diameters, and friction losses for all the components are specified, as well as the fan flow rate. The pressure drops and flow rates can be computed by hand.  Also listed in Fig.~\ref{ASHRAE7} are the predicted pressure drops for a fan with a fixed flow rate, a fan with a quadratic fan curve (\ct{MAX_FLOW=2.4094}, \ct{MAX_PRESSURE=3000}) that includes the fixed flow state (i.e., the flow rate of 1.45~\unit{m^3/s} and pressure drop of 1913.5~Pa from the fixed flow simulation sits on the quadratic curve), and a fan with a \ct{RAMP} to define the same quadratic fan curve at 500~Pa intervals. The hand calculations assume a constant density, whereas the FDS computation will have a slightly non-uniform density in the network due to pressure drops. It is expected that there will be small differences that will be more noticeable at higher pressure changes.  Additionally since specifying a fan curve via a table results in a piecewise linear approximation, it is expected that the user-defined fan curve results will vary slightly from the quadratic and fixed flow results. Lastly, to account for the fan affinity law for density, the density in the fan duct from the fixed flow case was used to adjust the final values input for the fan curves upwards by 1.6~\% (e.g., the \ct{MAX_PRESSURE=3000} was input as \ct{MAX_PRESSURE=3048}).
 
 \begin{figure}[ht]
 \centering
