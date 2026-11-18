@@ -1,5 +1,12 @@
 name: cmake
 env:
+  UBUNTU_MIRRORS: |
+    http://azure.archive.ubuntu.com/ubuntu
+    http://archive.ubuntu.com/ubuntu
+    http://mirrors.edge.kernel.org/ubuntu
+    http://mirrors.mit.edu/ubuntu
+    http://mirror.math.princeton.edu/pub/ubuntu
+    http://ubuntu.osuosl.org/ubuntu
   # update urls for oneapi packages according to
   # https://github.com/oneapi-src/oneapi-ci/blob/master/.github/workflows/build_all.yml
   WINDOWS_TOOLKIT_URL: https://registrationcenter-download.intel.com/akdlm/IRC_NAS/4144bec3-82ce-4672-bd71-5c93a79cd5e7/intel-oneapi-toolkit-2026.1.0.191_offline.exe
@@ -22,7 +29,7 @@ on:
 
 concurrency:
   group: cmake-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request_target' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 
 permissions:
@@ -59,7 +66,36 @@ jobs:
     - name: Install prerequisites (apt)
       if: matrix.container == 'ubuntu:24.04'
       run: |
-        apt-get -y update
+        # Check Ubuntu's signed indexes before choosing a mirror.
+        # HTTP also works before ca-certificates is installed in the container.
+        root=()
+        if [ "$EUID" -ne 0 ]; then root=(sudo); fi
+        sources=/etc/apt/sources.list.d/ubuntu.sources
+        if [ ! -f "$sources" ]; then sources=/etc/apt/sources.list; fi
+        original_sources=$(cat "$sources")
+        mirror_ready=false
+        for mirror in $UBUNTU_MIRRORS; do
+          echo "Trying Ubuntu mirror: $mirror"
+          # Handle both direct Ubuntu URLs and the hosted runner's mirror-list URI.
+          printf '%s\n' "$original_sources" |
+            sed -E "s@(https?://([[:alnum:].-]*archive\.ubuntu\.com|security\.ubuntu\.com)/ubuntu/?|mirror\+file:/etc/apt/apt-mirrors\.txt)@$mirror/@g" |
+            "${root[@]}" tee "$sources" > /dev/null
+          if "${root[@]}" timeout --kill-after=5s 90s apt-get \
+            -o Dir::Etc::sourcelist="$sources" -o Dir::Etc::sourceparts="-" \
+            -o APT::Update::Error-Mode=any -o Acquire::Retries=0 \
+            -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15 update
+          then
+            echo "Using Ubuntu mirror: $mirror"
+            echo "Ubuntu mirror: $mirror" >> "$GITHUB_STEP_SUMMARY"
+            mirror_ready=true
+            break
+          fi
+          echo "::warning title=Ubuntu mirror unavailable::$mirror could not supply the package indexes; continuing to the next mirror."
+        done
+        if [ "$mirror_ready" != true ]; then
+          echo "::error title=Ubuntu dependency setup unavailable::None of the six mirrors supplied the package indexes. FDS was not built."
+          exit 1
+        fi
         apt-get -y install -y git gcc make cmake sudo environment-modules
 
     # # Setup OneAPI, icx is necessary for third-party libs
@@ -85,10 +121,14 @@ jobs:
       if: endsWith(matrix.compiler_mpi, '_openmpi') && (startsWith(matrix.container, 'rockylinux') || startsWith(matrix.container, 'fedora'))
       run: dnf install -y openmpi-devel
 
+    - name: install gcc-toolset
+      if: startsWith(matrix.compiler_mpi, 'gnu_') && startsWith(matrix.container, 'rockylinux')
+      run: dnf install -y gcc-toolset-14-gcc gcc-toolset-14-gcc-c++ gcc-toolset-14-gcc-gfortran
+
     - name: install openmpi
       if: endsWith(matrix.compiler_mpi, '_openmpi') && startsWith(matrix.container, 'ubuntu')
       run: |
-        sudo apt-get -y update
+        sudo apt-get -o APT::Update::Error-Mode=any -y update
         sudo apt-get -y install libopenmpi-dev openmpi-bin
 
     - uses: actions/checkout@v7.0.1
@@ -125,6 +165,7 @@ jobs:
       run: |
         # source /opt/intel/oneapi/setvars.sh
         if [ "${{matrix.container}}" = "rockylinux:9" ]; then
+            source /opt/rh/gcc-toolset-14/enable
             source /etc/profile.d/modules.sh
             module load mpi/openmpi-x86_64
         fi
@@ -142,9 +183,93 @@ jobs:
       run: |
         source /opt/intel/oneapi/setvars.sh
         if [ "${{matrix.container}}" = "rockylinux:9" ]; then
+            source /opt/rh/gcc-toolset-14/enable
             source /etc/profile.d/modules.sh
             module load mpi/openmpi-x86_64
         fi
+        ctest --test-dir builddir -j --output-on-failure -V
+
+  cmake-linux-nvhpc:
+    # build on ubuntu using the NVIDIA HPC SDK compilers (nvfortran, nvc, nvc++) and its bundled MPI (HPC-X, Open MPI based)
+    name: ubuntu-24.04 nvhpc_hpcx openmp=${{ matrix.openmp }} ${{ matrix.build_type }}
+    runs-on: [ubuntu-24.04]
+    env:
+      NVHPC_VERSION: "26.9"
+      # The runners have no GPU; skip the CUDA/UCC parts of the HPC-X initialization (see HPC SDK release notes)
+      OMPI_MCA_coll_ucc_enable: "0"
+      UCX_MODULES: "^cuda"
+    strategy:
+      fail-fast: false
+      matrix:
+        openmp:
+          - "ON"
+          - "OFF"
+        build_type:
+          - "Debug"
+          - "Release"
+    defaults:
+      run:
+        shell: bash
+    steps:
+    - name: install nvidia hpc sdk
+      run: |
+        # Check Ubuntu's signed indexes before choosing a mirror.
+        # HTTP also works before ca-certificates is installed in the container.
+        root=()
+        if [ "$EUID" -ne 0 ]; then root=(sudo); fi
+        sources=/etc/apt/sources.list.d/ubuntu.sources
+        if [ ! -f "$sources" ]; then sources=/etc/apt/sources.list; fi
+        original_sources=$(cat "$sources")
+        mirror_ready=false
+        for mirror in $UBUNTU_MIRRORS; do
+          echo "Trying Ubuntu mirror: $mirror"
+          # Handle both direct Ubuntu URLs and the hosted runner's mirror-list URI.
+          printf '%s\n' "$original_sources" |
+            sed -E "s@(https?://([[:alnum:].-]*archive\.ubuntu\.com|security\.ubuntu\.com)/ubuntu/?|mirror\+file:/etc/apt/apt-mirrors\.txt)@$mirror/@g" |
+            "${root[@]}" tee "$sources" > /dev/null
+          if "${root[@]}" timeout --kill-after=5s 90s apt-get \
+            -o Dir::Etc::sourcelist="$sources" -o Dir::Etc::sourceparts="-" \
+            -o APT::Update::Error-Mode=any -o Acquire::Retries=0 \
+            -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15 update
+          then
+            echo "Using Ubuntu mirror: $mirror"
+            echo "Ubuntu mirror: $mirror" >> "$GITHUB_STEP_SUMMARY"
+            mirror_ready=true
+            break
+          fi
+          echo "::warning title=Ubuntu mirror unavailable::$mirror could not supply the package indexes; continuing to the next mirror."
+        done
+        if [ "$mirror_ready" != true ]; then
+          echo "::error title=Ubuntu dependency setup unavailable::None of the six mirrors supplied the package indexes. FDS was not built."
+          exit 1
+        fi
+        KR=/usr/share/keyrings/nvidia-hpcsdk-archive-keyring.gpg
+        curl -fsSL https://developer.download.nvidia.com/hpc-sdk/ubuntu/DEB-GPG-KEY-NVIDIA-HPC-SDK | sudo gpg --dearmor -o $KR
+        echo "deb [signed-by=$KR] https://developer.download.nvidia.com/hpc-sdk/ubuntu/amd64 /" | sudo tee /etc/apt/sources.list.d/nvhpc.list
+        sudo apt-get -o APT::Update::Error-Mode=any -y update
+        sudo apt-get -y install environment-modules nvhpc-${NVHPC_VERSION/./-}
+
+    - uses: actions/checkout@v7.0.1
+      with:
+        ref: ${{ inputs.ref || github.sha }}
+        persist-credentials: false
+
+    - name: build fds
+      run: |
+        source /usr/share/modules/init/bash
+        module use /opt/nvidia/hpc_sdk/modulefiles
+        module load nvhpc/${NVHPC_VERSION}
+        export CC=nvc CXX=nvc++ FC=nvfortran
+        nvfortran --version
+        which mpifort && mpifort --showme
+        cmake -B builddir -S . -DCMAKE_BUILD_TYPE=${{matrix.build_type}} -DUSE_OPENMP=${{matrix.openmp}}
+        cmake --build builddir -j --target fds
+
+    - name: Test
+      run: |
+        source /usr/share/modules/init/bash
+        module use /opt/nvidia/hpc_sdk/modulefiles
+        module load nvhpc/${NVHPC_VERSION}
         ctest --test-dir builddir -j --output-on-failure -V
 
   cmake-osx:
@@ -156,7 +281,7 @@ jobs:
       # and build configurations
       matrix:
         os:
-          - macos-14
+          - macos-26
         compiler_mpi:
           - "gnu_openmpi"
         openmp:
@@ -174,18 +299,20 @@ jobs:
           persist-credentials: false
 
       - name: install openmpi
-        run: brew install gcc@15 open-mpi
+        run: |
+          brew install gcc libomp open-mpi
+          brew link --force libomp
 
       - name: set macos gcc
         if: startsWith(matrix.compiler_mpi, 'gnu_')
         shell: bash
         run: |
-          echo "CC=gcc-15" >> $GITHUB_ENV
-          echo "CXX=g++-15" >> $GITHUB_ENV
-          echo "FC=gfortran-15" >> $GITHUB_ENV
-          echo "OMPI_CC=gcc-15" >> $GITHUB_ENV
-          echo "OMPI_CXX=g++-15" >> $GITHUB_ENV
-          echo "OMPI_FC=gfortran-15" >> $GITHUB_ENV
+          echo "CC=gcc" >> $GITHUB_ENV
+          echo "CXX=g++" >> $GITHUB_ENV
+          echo "FC=gfortran" >> $GITHUB_ENV
+          echo "OMPI_CC=gcc" >> $GITHUB_ENV
+          echo "OMPI_CXX=g++" >> $GITHUB_ENV
+          echo "OMPI_FC=gfortran" >> $GITHUB_ENV
           brew install glew gd zlib json-c
 
       - name: set macos intel
